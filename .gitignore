@@ -1,0 +1,49 @@
+# Archivos y carpetas a ignorar en Git
+
+# Credenciales
+credentials.json
+.env
+.env.local
+
+# Entorno virtual Python
+venv/
+env/
+ENV/
+.venv
+
+# Caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Archivos generados
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporal
+temp/
+tmp/
+
+# Project docs and scripts (user request)
+API_REFERENCE.md
+PRIMEROS_PASOS.md
+SETUP_GCP.md
+run.sh
+examples.py

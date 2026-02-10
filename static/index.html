@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Slides Automation Tool</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header class="header">
+            <div class="header-content">
+                <h1>🚀 Google Slides Automation</h1>
+                <p class="subtitle">Extrae identificadores y componentes dinámicos de tus presentaciones</p>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            <!-- SECCIÓN 1: EXTRAER IDs DE SLIDES -->
+            <section class="feature-card">
+                <div class="card-header">
+                    <h2>📋 1. Extraer Identificadores de Slides</h2>
+                    <p class="description">Busca todos los elementos con <code>$</code> en cada slide de tu presentación</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="url-extract">URL de la Presentación:</label>
+                    <input 
+                        type="text" 
+                        id="url-extract"
+                        placeholder="https://docs.google.com/presentation/d/..."
+                        class="input-field"
+                    >
+                    <button 
+                        id="btn-extract-ids" 
+                        class="btn btn-primary"
+                        onclick="extractSlideIds()"
+                    >
+                        🔍 Extraer Identificadores
+                    </button>
+                </div>
+
+                <!-- Resultado de extracción de IDs -->
+                <div id="result-extract-ids" class="result-container" style="display:none;">
+                    <div class="result-header success">
+                        ✓ Identificadores encontrados
+                    </div>
+                    <div id="output-extract-ids" class="output-text"></div>
+                </div>
+
+                <!-- Error de extracción de IDs -->
+                <div id="error-extract-ids" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">
+                        ✗ Error
+                    </div>
+                    <div id="error-text-extract-ids" class="error-text"></div>
+                </div>
+
+                <!-- Loading spinner -->
+                <div id="loading-extract-ids" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Procesando...</p>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 2: OBTENER COMPONENTES DE UNA SLIDE -->
+            <section class="feature-card">
+                <div class="card-header">
+                    <h2>🎯 2. Obtener Componentes de una Slide</h2>
+                    <p class="description">Busca todos los elementos con <code>#</code> en una slide específica</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="url-components">URL de la Presentación:</label>
+                    <input 
+                        type="text" 
+                        id="url-components"
+                        placeholder="https://docs.google.com/presentation/d/..."
+                        class="input-field"
+                    >
+
+                    <label for="slide-index">Índice de la Slide (comienza en 0):</label>
+                    <input 
+                        type="number" 
+                        id="slide-index"
+                        placeholder="0"
+                        min="0"
+                        class="input-field"
+                    >
+
+                    <button 
+                        id="btn-get-components" 
+                        class="btn btn-primary"
+                        onclick="getSlideComponents()"
+                    >
+                        🔎 Obtener Componentes
+                    </button>
+                </div>
+
+                <!-- Resultado de componentes -->
+                <div id="result-components" class="result-container" style="display:none;">
+                    <div class="result-header success">
+                        ✓ Componentes encontrados
+                    </div>
+                    <div id="output-components" class="output-text"></div>
+                </div>
+
+                <!-- Error de componentes -->
+                <div id="error-components" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">
+                        ✗ Error
+                    </div>
+                    <div id="error-text-components" class="error-text"></div>
+                </div>
+
+                <!-- Loading spinner -->
+                <div id="loading-components" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Procesando...</p>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 3: INFORMACIÓN Y GUÍA -->
+            <section class="feature-card info-card">
+                <div class="card-header">
+                    <h2>ℹ️ Información</h2>
+                </div>
+
+                <div class="info-content">
+                    <h3>¿Cómo funciona?</h3>
+                    <ul>
+                        <li><strong>Identificadores ($):</strong> Son etiquetas únicas en cada slide que la identifican. Ej: <code>$portada</code>, <code>$contenido</code></li>
+                        <li><strong>Componentes (#):</strong> Son marcadores dinámicos dentro de una slide que se pueden llenar con datos. Ej: <code>#titulo</code>, <code>#fecha</code></li>
+                    </ul>
+
+                    <h3>Requisitos previos:</h3>
+                    <ol>
+                        <li>Tener configurado un Service Account en GCP</li>
+                        <li>Haber compartido la presentación con el correo del Service Account</li>
+                        <li>Los marcadores $ y # deben estar en elementos de texto de la presentación</li>
+                    </ol>
+
+                    <h3>Ejemplo de estructura esperada:</h3>
+                    <div class="code-block">
+                        <strong>Slide 0:</strong> Contiene $portada<br>
+                        <strong>Slide 1:</strong> Contiene #titulo, #descripcion, #imagen<br>
+                        <strong>Slide 2:</strong> Contiene $contenido con #tabla, #datos
+                    </div>
+                </div>
+
+                <button class="btn btn-secondary" onclick="checkHealth()">
+                    🔧 Verificar estado del servicio
+                </button>
+
+                <div id="health-status" class="result-container" style="display:none;">
+                    <div id="health-output" class="output-text"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- FOOTER -->
+        <footer class="footer">
+            <p>Google Slides Automation Tool v1.0 | Basado en Google Slides API</p>
+        </footer>
+    </div>
+
+    <!-- SCRIPT -->
+    <script src="/static/script.js"></script>
+</body>
+</html>

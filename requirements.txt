@@ -1,0 +1,12 @@
+# Google Slides API client
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.107.0
+
+# Fast API y servidor web
+fastapi==0.109.0
+uvicorn==0.27.0
+python-dotenv==1.0.0
+
+# Utilidades
+requests==2.31.0

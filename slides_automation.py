@@ -1,8 +1,5 @@
 """
-MÓDULO PRINCIPAL DE AUTOMATIZACIÓN DE GOOGLE SLIDES
-===================================================
-
-Este módulo contiene las 2 funciones principales:
+Contiene las 2 funciones principales:
 1. extract_slide_ids() - Extrae los identificadores de slides (con signo $)
 2. get_slide_components() - Obtiene los componentes dinámicos de una slide (con signo #)
 
@@ -11,11 +8,11 @@ Estructura esperada en Google Slides:
 - Componentes dinámicos: #component_name, #title, #content, etc.
 """
 
-import re
-from typing import List, Dict, Set
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-import logging
+import re #Librería para buscar patrones de texto como # y $
+from typing import List, Dict, Set  #Define tipos de datos para listas y diccionarios
+from google.oauth2 import service_account #Gestiona la key de la Service Account
+from googleapiclient.discovery import build #Crea la conexión con la API de Google
+import logging #Registra eventos y errores del sistema
 
 # Configurar logging para seguimiento de operaciones
 logging.basicConfig(level=logging.INFO)
@@ -23,32 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleSlidesAutomation:
-    """
-    Clase para interactuar con Google Slides API y procesar identificadores
-    y componentes dinámicos.
-    
-    Args:
-        credentials_path (str): Ruta al archivo JSON de credenciales del Service Account
-    """
-    
+    """ Extracción de metadatos y etiquetas dinámicas en Google Slides.
+    Requiere la ruta de un archivo JSON de credenciales de cuenta de servicio. """
     def __init__(self, credentials_path: str):
-        """
-        Inicializa la conexión con Google Slides API usando Service Account.
-        
-        El Service Account es una cuenta de servicio que actúa como una aplicación,
-        permitiendo acceso programático a Google Slides sin intervención del usuario.
-        """
+        """ Constructor que establece la ruta de credenciales e inicializa la conexión con la API."""
         self.credentials_path = credentials_path
         self.service = self._initialize_service()
     
     def _initialize_service(self):
-        """
-        Establece la conexión con Google Slides API usando credenciales de Service Account.
-        
+        """ Establece la conexión con Google Slides API usando credenciales de Service Account.
         Scopes utilizados:
         - https://www.googleapis.com/auth/presentations: Acceso completo a presentaciones
-        - https://www.googleapis.com/auth/drive: Acceso a Google Drive (para leer metadatos)
-        """
+        - https://www.googleapis.com/auth/drive: Acceso a Google Drive (para leer metadatos) """
         try:
             # Define los permisos que necesita el Service Account
             SCOPES = [
@@ -56,7 +39,7 @@ class GoogleSlidesAutomation:
                 'https://www.googleapis.com/auth/drive'
             ]
             
-            # Carga las credenciales desde el archivo JSON
+            # Carga las credenciales desde el archivo credentials.json
             credentials = service_account.Credentials.from_service_account_file(
                 self.credentials_path, scopes=SCOPES
             )
@@ -75,29 +58,8 @@ class GoogleSlidesAutomation:
     
     def extract_slide_ids(self, presentation_url: str) -> Dict[int, list]:
         """
-        FUNCIÓN 1: Extrae los identificadores únicos de cada slide.
-        
-        Busca patrones de texto que contengan $ (por ej: $slide_id_1, $portada, etc.)
-        en TODAS las slides de la presentación.
-        
-        Args:
-            presentation_url (str): URL de la presentación de Google Slides
-                                   Ejemplo: https://docs.google.com/presentation/d/1ABC...
-        
-        Returns:
-            Dict[int, str]: Diccionario con estructura:
-                           {
-                               0: "$slide_id_1",
-                               1: "$main_slide", 
-                               2: "$chart_slide",
-                               ...
-                           }
-        
-        Ejemplo de uso:
-            >>> automation = GoogleSlidesAutomation('credentials.json')
-            >>> ids = automation.extract_slide_ids('https://docs.google.com/presentation/d/...')
-            >>> print(ids)
-            {0: '$slide_id_1', 1: '$main_content', 2: '$report_data'}
+        Escanea la presentación completa para identificar etiquetas de tipo estructura ($).
+        Retorna un diccionario mapeando el índice de la diapositiva con sus identificadores.
         """
         try:
             # Extrae el ID de la presentación desde la URL
@@ -113,12 +75,11 @@ class GoogleSlidesAutomation:
 
             # Itera por cada slide de la presentación
             for slide_index, slide in enumerate(presentation.get('slides', [])):
-                # Los elementos dentro de una slide pueden ser texto, imágenes, shapes, etc.
                 # Buscar todos los identificadores que empiecen con '$'
                 ids = self._find_all_components_in_slide(slide, '$')
 
                 if ids:
-                    # Guardar como lista (el método devuelve un set)
+                    # Guardar como lista
                     slide_identifiers[slide_index] = list(ids)
                     logger.info(f"Slide {slide_index}: encontrados {len(ids)} identificadores")
                 else:
@@ -133,27 +94,8 @@ class GoogleSlidesAutomation:
     
     def get_slide_components(self, presentation_url: str, slide_index: int) -> List[str]:
         """
-        FUNCIÓN 2: Obtiene todos los componentes dinámicos de una slide específica.
-        
-        Busca patrones de texto que contengan # (por ej: #title, #content, #table_data, etc.)
-        SOLO en la slide especificada por su índice.
-        
-        Args:
-            presentation_url (str): URL de la presentación
-            slide_index (int): Índice de la slide (0-based)
-                              Nota: Puedes obtener el slide_index usando extract_slide_ids()
-        
-        Returns:
-            List[str]: Lista de componentes encontrados
-                      Ejemplo: ['#title', '#subtitle', '#content', '#footer']
-        
-        Ejemplo de uso:
-            >>> components = automation.get_slide_components(
-            ...     'https://docs.google.com/presentation/d/...',
-            ...     slide_index=0
-            ... )
-            >>> print(components)
-            ['#title', '#description', '#image_placeholder', '#date']
+        Localiza todos los campos de datos dinámicos (#) dentro de una diapositiva específica.
+        Requiere la URL y el índice de la diapositiva a inspeccionar.
         """
         try:
             # Extrae el ID de la presentación
@@ -190,19 +132,12 @@ class GoogleSlidesAutomation:
             logger.error(f"✗ Error obteniendo componentes de slide: {str(e)}")
             raise
     
-    # ============================================================================
-    # MÉTODOS PRIVADOS (uso interno)
-    # ============================================================================
+ 
     
     @staticmethod
     def _extract_presentation_id(url: str) -> str:
         """
-        Extrae el ID único de la presentación desde la URL.
-        
-        La URL de Google Slides tiene este formato:
-        https://docs.google.com/presentation/d/{ID}/edit?...
-        
-        Este método extrae el {ID}.
+        Método estático que aísla el ID de la presentación contenido en la cadena de la URL.
         """
         match = re.search(r'/presentation/d/([a-zA-Z0-9-_]+)', url)
         if match:
@@ -212,17 +147,7 @@ class GoogleSlidesAutomation:
     @staticmethod
     def _find_identifier_in_slide(slide: Dict, marker: str = '$') -> str:
         """
-        Busca en una slide un ÚNICO identificador que contenga el marcador ($).
-        
-        Busca en todos los elementos de texto de la slide (shapes, text boxes, etc.)
-        y retorna el primer identificador encontrado.
-        
-        Args:
-            slide (Dict): Datos de la slide del API
-            marker (str): El carácter buscado ('$' para identificadores)
-        
-        Returns:
-            str: El identificador encontrado o vacío si no hay
+        Busca en una slide identificadores que contenga el marcador ($).  
         """
         for element in slide.get('pageElements', []):
             # Las shapes pueden contener texto
@@ -243,17 +168,7 @@ class GoogleSlidesAutomation:
     @staticmethod
     def _find_all_components_in_slide(slide: Dict, marker: str = '#') -> Set[str]:
         """
-        Busca en una slide TODOS los componentes que contengan el marcador (#).
-        
-        A diferencia de _find_identifier_in_slide, esta función busca y retorna
-        TODOS los componentes encontrados en la slide.
-        
-        Args:
-            slide (Dict): Datos de la slide del API
-            marker (str): El carácter buscado ('#' para componentes dinámicos)
-        
-        Returns:
-            Set[str]: Conjunto de componentes únicos encontrados
+        Busca en una slide los componentes que contengan el marcador (#).
         """
         components = set()
         
@@ -283,24 +198,3 @@ class GoogleSlidesAutomation:
         
         return components
 
-
-# ============================================================================
-# FUNCIONES AUXILIARES DE ACCESO RÁPIDO
-# ============================================================================
-
-def extract_slide_ids_from_presentation(presentation_url: str, credentials_path: str) -> Dict[int, str]:
-    """
-    Función simplificada para extraer IDs sin instanciar la clase.
-    
-    Útil para implementaciones rápidas o pruebas.
-    """
-    automation = GoogleSlidesAutomation(credentials_path)
-    return automation.extract_slide_ids(presentation_url)
-
-
-def get_components_from_slide(presentation_url: str, slide_index: int, credentials_path: str) -> List[str]:
-    """
-    Función simplificada para obtener componentes sin instanciar la clase.
-    """
-    automation = GoogleSlidesAutomation(credentials_path)
-    return automation.get_slide_components(presentation_url, slide_index)

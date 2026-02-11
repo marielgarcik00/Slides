@@ -33,9 +33,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# Crear aplicación FastAPI
-# ============================================================================
 
 app = FastAPI(
     title="Google Slides Automation API",
@@ -43,15 +40,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# ============================================================================
-# CONFIGURACIÓN DE CORS
-# ============================================================================
-# CORS (Cross-Origin Resource Sharing) permite que el frontend HTML pueda
-# realizar solicitudes a este servidor desde el navegador.
+# CONFIGURACIÓN DE CORS (Cross-Origin Resource Sharing) permite que el frontend HTML pueda realizar solicitudes a este servidor desde el navegador.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios específicos
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -77,7 +70,7 @@ class GetSlideComponentsRequest(BaseModel):
 class ExtractSlideIdsResponse(BaseModel):
     """Respuesta con los identificadores de slides"""
     success: bool
-    slide_identifiers: Dict[int, List[str]]  # {0: ['$slide_id_1',' $otro'], 1: ['$main_slide'], ...}
+    slide_identifiers: Dict[int, List[str]]  
     message: str
 
 
@@ -95,14 +88,13 @@ class HealthResponse(BaseModel):
     message: str
 
 
-# ============================================================================
 # ENDPOINTS
-# ============================================================================
+
 
 @app.get("/", tags=["Frontend"])
 async def root():
     """
-    Endpoint raíz - Sirve el archivo index.html del frontend.
+    Sirve el archivo index.html del frontend.
     """
     index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     
@@ -122,9 +114,8 @@ async def root():
         }
 
     
-    # ============================================================================
     # ENDPOINT: Health Check
-    # ============================================================================
+    
     @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
     async def health_check():
         """
@@ -146,9 +137,7 @@ async def root():
         )
 
 
-# ============================================================================
-# SERVIR ARCHIVOS ESTÁTICOS (Frontend HTML/CSS/JS)
-# ============================================================================
+ 
 # Monta la carpeta `static` para servir CSS/JS/otros recursos
 if os.path.exists('./static'):
     app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -156,35 +145,7 @@ if os.path.exists('./static'):
 
 @app.post("/api/extract-slide-ids", response_model=ExtractSlideIdsResponse, tags=["Slides"])
 async def extract_slide_ids(request: ExtractSlideIdsRequest):
-    """
-    ENDPOINT 1 - Extrae todos los identificadores de slides.
-    
-    Este endpoint:
-    1. Recibe una URL de presentación de Google Slides
-    2. Conecta con la presentación usando Service Account
-    3. Busca en todas las slides elementos que contengan $
-    4. Retorna un diccionario {slide_index: identifier}
-    
-    Ejemplo de solicitud:
-    ```json
-    {
-        "presentation_url": "https://docs.google.com/presentation/d/1ABC.../edit"
-    }
-    ```
-    
-    Ejemplo de respuesta exitosa:
-    ```json
-    {
-        "success": true,
-        "slide_identifiers": {
-            0: "$portada",
-            1: "$contenido_principal",
-            2: "$cierre"
-        },
-        "message": "Se encontraron 3 identificadores"
-    }
-    ```
-    """
+    # Define ruta POST para extraer identificadores estructurales
     try:
         # Obtiene la ruta del archivo de credenciales desde la variable de entorno
         credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
@@ -199,7 +160,7 @@ async def extract_slide_ids(request: ExtractSlideIdsRequest):
         # Inicializa la automatización con las credenciales
         automation = GoogleSlidesAutomation(credentials_path)
         
-        # Llama a la FUNCIÓN 1: extrae los identificadores
+        # Llama extraer los identificadores
         slide_identifiers = automation.extract_slide_ids(request.presentation_url)
         
         logger.info(f"✓ Se extrajeron {len(slide_identifiers)} identificadores")
@@ -226,33 +187,7 @@ async def extract_slide_ids(request: ExtractSlideIdsRequest):
 
 @app.post("/api/get-slide-components", response_model=GetSlideComponentsResponse, tags=["Slides"])
 async def get_slide_components(request: GetSlideComponentsRequest):
-    """
-    ENDPOINT 2 - Obtiene los componentes dinámicos de una slide específica.
-    
-    Este endpoint:
-    1. Recibe URL de presentación e índice de slide
-    2. Conecta con la presentación
-    3. Busca en la slide especificada elementos que contengan #
-    4. Retorna una lista de componentes encontrados
-    
-    Ejemplo de solicitud:
-    ```json
-    {
-        "presentation_url": "https://docs.google.com/presentation/d/1ABC.../edit",
-        "slide_index": 0
-    }
-    ```
-    
-    Ejemplo de respuesta exitosa:
-    ```json
-    {
-        "success": true,
-        "slide_index": 0,
-        "components": ["#titulo", "#subtitulo", "#imagen"],
-        "message": "Se encontraron 3 componentes"
-    }
-    ```
-    """
+    # Define ruta POST para obtener variables de datos #
     try:
         # Obtiene la ruta del archivo de credenciales
         credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
@@ -274,7 +209,7 @@ async def get_slide_components(request: GetSlideComponentsRequest):
         # Inicializa la automatización
         automation = GoogleSlidesAutomation(credentials_path)
         
-        # Llama a la FUNCIÓN 2: obtiene los componentes
+        # Llama a obtener los componentes
         components = automation.get_slide_components(
             request.presentation_url,
             request.slide_index
@@ -304,13 +239,9 @@ async def get_slide_components(request: GetSlideComponentsRequest):
     
 
 
-# ============================================================================
-# PUNTO DE ENTRADA
-# ============================================================================
-
+# Punto de entrada para ejecución directa del script
 if __name__ == "__main__":
     import uvicorn
-    
     port = int(os.getenv('PORT', 8000))
     
     print(f"""

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Slides Automation Tool</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <title>Google Slides Automation Tool (v2.1)</title>
+    <link rel="stylesheet" href="/static/styles.css?v=8">
 </head>
+
 <body>
     <div class="container">
         <!-- HEADER -->
@@ -22,22 +24,15 @@
             <section class="feature-card">
                 <div class="card-header">
                     <h2>📋 1. Extraer Identificadores de Slides</h2>
-                    <p class="description">Busca todos los elementos con <code>$</code> en cada slide de tu presentación</p>
+                    <p class="description">Busca todos los elementos con <code>$</code> en cada slide de tu presentación
+                    </p>
                 </div>
 
                 <div class="form-group">
                     <label for="url-extract">URL de la Presentación:</label>
-                    <input 
-                        type="text" 
-                        id="url-extract"
-                        placeholder="https://docs.google.com/presentation/d/..."
-                        class="input-field"
-                    >
-                    <button 
-                        id="btn-extract-ids" 
-                        class="btn btn-primary"
-                        onclick="extractSlideIds()"
-                    >
+                    <input type="text" id="url-extract" placeholder="https://docs.google.com/presentation/d/..."
+                        class="input-field">
+                    <button id="btn-extract-ids" class="btn btn-primary" onclick="extractSlideIds()">
                         🔍 Extraer Identificadores
                     </button>
                 </div>
@@ -65,36 +60,104 @@
                 </div>
             </section>
 
+            <!-- SECCIÓN 2: COPIA AVANZADA (UNIFICADA) -->
+            <section class="feature-card">
+                <div class="card-header">
+                    <h2>📑 2. Copia Avanzada de Presentación</h2>
+                    <p class="description">Copia una presentación completa o selecciona slides específicas para
+                        duplicar/eliminar.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="url-advanced">URL de la Presentación Origen:</label>
+                    <input type="text" id="url-advanced" placeholder="https://docs.google.com/presentation/d/..."
+                        class="input-field">
+
+                    <label for="folder-advanced">Carpeta de Destino (URL o ID):</label>
+                    <input type="text" id="folder-advanced" placeholder="https://drive.google.com/drive/folders/..."
+                        class="input-field">
+
+                    <label for="name-advanced">Nombre de la Nueva Presentación:</label>
+                    <input type="text" id="name-advanced" placeholder="Ej: Mi Presentación Copia" class="input-field">
+
+                    <button id="btn-preview-advanced" class="btn btn-secondary" onclick="previewSlides()">
+                        📥 Previsualizar / Configurar Slides
+                    </button>
+
+                    <!-- Contenedor CONFIGURACIÓN (oculto) -->
+                    <div id="advanced-config-container" style="display:none; margin-top: 20px;">
+                        <div class="separator"></div>
+                        <h3>Configuración de Slides (Playlist)</h3>
+                        <p class="description">Selecciona slides de la izquierda para agregar a tu nueva presentación a
+                            la derecha. Puedes reordenarlas y repetir slides.</p>
+
+                        <div class="playlist-container">
+                            <!-- Left: Source -->
+                            <div class="source-panel">
+                                <div class="panel-header">
+                                    <span>Slides Disponibles</span>
+                                    <span class="badge" id="source-count">0</span>
+                                </div>
+                                <div id="source-list" class="panel-content">
+                                    <!-- Source items injected here -->
+                                </div>
+                            </div>
+
+                            <!-- Right: Target -->
+                            <div class="target-panel">
+                                <div class="panel-header">
+                                    <span>Nueva Estructura</span>
+                                    <button class="btn-small" onclick="clearTargetList()"
+                                        style="font-size: 0.7rem;">Limpiar</button>
+                                </div>
+                                <div id="target-list" class="panel-content">
+                                    <!-- Target items injected here -->
+                                    <div class="empty-target-message">Agrega slides desde el panel izquierdo</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="separator"></div>
+
+                        <button id="btn-execute-advanced" class="btn btn-primary" onclick="executeAdvancedCopy()">
+                            🚀 Confirmar y Crear Copia
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Resultados -->
+                <div id="result-advanced" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Operación Exitosa</div>
+                    <div id="output-advanced" class="output-text"></div>
+                </div>
+
+                <div id="error-advanced" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">✗ Error</div>
+                    <div id="error-text-advanced" class="error-text"></div>
+                </div>
+
+                <div id="loading-advanced" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Procesando...</p>
+                </div>
+            </section>
+
             <!-- SECCIÓN 2: OBTENER COMPONENTES DE UNA SLIDE -->
             <section class="feature-card">
                 <div class="card-header">
-                    <h2>🎯 2. Obtener Componentes de una Slide</h2>
+                    <h2>🎯 3. Obtener Componentes de una Slide</h2>
                     <p class="description">Busca todos los elementos con <code>#</code> en una slide específica</p>
                 </div>
 
                 <div class="form-group">
                     <label for="url-components">URL de la Presentación:</label>
-                    <input 
-                        type="text" 
-                        id="url-components"
-                        placeholder="https://docs.google.com/presentation/d/..."
-                        class="input-field"
-                    >
+                    <input type="text" id="url-components" placeholder="https://docs.google.com/presentation/d/..."
+                        class="input-field">
 
                     <label for="slide-index">Índice de la Slide (comienza en 0):</label>
-                    <input 
-                        type="number" 
-                        id="slide-index"
-                        placeholder="0"
-                        min="0"
-                        class="input-field"
-                    >
+                    <input type="number" id="slide-index" placeholder="0" min="0" class="input-field">
 
-                    <button 
-                        id="btn-get-components" 
-                        class="btn btn-primary"
-                        onclick="getSlideComponents()"
-                    >
+                    <button id="btn-get-components" class="btn btn-primary" onclick="getSlideComponents()">
                         🔎 Obtener Componentes
                     </button>
                 </div>
@@ -131,8 +194,10 @@
                 <div class="info-content">
                     <h3>¿Cómo funciona?</h3>
                     <ul>
-                        <li><strong>Identificadores ($):</strong> Son etiquetas únicas en cada slide que la identifican. Ej: <code>$portada</code>, <code>$contenido</code></li>
-                        <li><strong>Componentes (#):</strong> Son marcadores dinámicos dentro de una slide que se pueden llenar con datos. Ej: <code>#titulo</code>, <code>#fecha</code></li>
+                        <li><strong>Identificadores ($):</strong> Son etiquetas únicas en cada slide que la identifican.
+                            Ej: <code>$portada</code>, <code>$contenido</code></li>
+                        <li><strong>Componentes (#):</strong> Son marcadores dinámicos dentro de una slide que se pueden
+                            llenar con datos. Ej: <code>#titulo</code>, <code>#fecha</code></li>
                     </ul>
 
                     <h3>Requisitos previos:</h3>
@@ -167,6 +232,7 @@
     </div>
 
     <!-- SCRIPT -->
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=8"></script>
 </body>
+
 </html>

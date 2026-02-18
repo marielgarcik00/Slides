@@ -1,17 +1,5 @@
-"""
-API FASTAPI - Servidor HTTP para las funciones de automatización
-=================================================================
-
-Este archivo crea un servidor FastAPI que expone las dos funciones principales
-como endpoints HTTP. Permite acceder a las funciones desde el frontend o
-desde cualquier cliente HTTP.
-
-Endpoints disponibles:
-- GET /                              - Información del servicio
-- POST /api/extract-slide-ids        - Extrae identificadores
-- POST /api/get-slide-components     - Obtiene componentes
-- GET /api/health                    - Verificar estado del servicio
-"""
+""" Este archivo crea un servidor FastAPI que expone las dos funciones principales como endpoints HTTP. Permite acceder a las funciones desde el frontend o
+desde cualquier cliente HTTP. """
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -25,221 +13,253 @@ import logging
 
 # Importa el módulo con las funciones principales
 from slides_automation import GoogleSlidesAutomation
-
 # Carga variables de entorno desde .env
 load_dotenv()
-
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+#Obtiene la ruta del archivo de credenciales
+def get_credentials_path() -> str:
+    return os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
 
+#Valida que exista el archivo de credenciales y lo devuelve
+def validate_credentials() -> str:
+    creds_path = get_credentials_path()
+    if not os.path.exists(creds_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Archivo de credenciales no encontrado: {creds_path}"
+        )
+    return creds_path
+
+# crea instancia de automatización
+def create_automation(credentials_path: str) -> GoogleSlidesAutomation:
+    return GoogleSlidesAutomation(credentials_path)
+
+#Helper para loguear y re-lanzar errores de API de manera consistente
+def handle_api_error(context: str, error: Exception) -> None:
+    logger.error(f"✗ Error {context}: {str(error)}")
+    if isinstance(error, ValueError):
+        raise HTTPException(status_code=400, detail=str(error))
+    raise HTTPException(status_code=500, detail=f"Error al procesar: {str(error)}")
+
+# CONFIGURACIÓN APP
 app = FastAPI(
     title="Google Slides Automation API",
     description="API para automatizar Google Slides con identificadores y componentes dinámicos",
     version="1.0.0"
 )
 
-# CONFIGURACIÓN DE CORS (Cross-Origin Resource Sharing) permite que el frontend HTML pueda realizar solicitudes a este servidor desde el navegador.
-
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ============================================================================
 # MODELOS DE DATOS (Pydantic)
-# ============================================================================
-# Estos modelos definen la estructura de datos que la API recibe y envía.
-# Validación automática de tipos y documentación OpenAPI.
-
+#Solicitud para extraer identificadores de slides
 class ExtractSlideIdsRequest(BaseModel):
-    """Solicitud para extraer identificadores de slides"""
-    presentation_url: str  # URL de la presentación de Google Slides
+    presentation_url: str
 
-
+#Solicitud para obtener componentes de una slide específica"
 class GetSlideComponentsRequest(BaseModel):
-    """Solicitud para obtener componentes de una slide específica"""
-    presentation_url: str  # URL de la presentación
-    slide_index: int       # Índice de la slide (empezando en 0)
+    presentation_url: str
+    slide_index: int
 
-
+#Solicitud para copiar una presentación completa
+class CopyPresentationRequest(BaseModel):
+    presentation_url: str
+    folder_url_or_id: str
+    new_name: str = None
+#Solicitud para listar slides de una presentación
+class ListSlidesRequest(BaseModel):
+    presentation_url: str
+#Solicitud para copia con reordenamiento
+class CustomCopyRequest(BaseModel):
+    presentation_url: str
+    folder_url_or_id: str
+    new_name: str = None
+    slide_counts: Dict[int, int] = None
+    slide_sequence: List[int] = None
+#Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
-    """Respuesta con los identificadores de slides"""
     success: bool
-    slide_identifiers: Dict[int, List[str]]  
+    slide_identifiers: Dict[int, List[str]]
     message: str
-
-
+#Respuesta con lista de slides
+class ListSlidesResponse(BaseModel):
+    success: bool
+    slides: List[Dict]
+    message: str
+#Respuesta con los componentes de una slide
 class GetSlideComponentsResponse(BaseModel):
-    """Respuesta con los componentes de una slide"""
     success: bool
     slide_index: int
-    components: List[str]  # ['#title', '#content', '#date']
+    components: List[str]
     message: str
-
-
+#Respuesta que indica el estado del servicio
 class HealthResponse(BaseModel):
-    """Respuesta que indica el estado del servicio"""
     status: str
     message: str
 
-
 # ENDPOINTS
-
-
 @app.get("/", tags=["Frontend"])
 async def root():
-    """
-    Sirve el archivo index.html del frontend.
-    """
     index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
-    
     if os.path.exists(index_path):
         return FileResponse(index_path, media_type="text/html")
-    else:
-        # Si no existe el archivo, retorna info del API
-        return {
-            "service": "Google Slides Automation API",
-            "version": "1.0.0",
-            "message": "Archivo frontend no encontrado. Los archivos estáticos están en /static/",
-            "endpoints": {
-                "extract_ids": "POST /api/extract-slide-ids",
-                "get_components": "POST /api/get-slide-components",
-                "health": "GET /api/health"
-            }
+    
+    return {
+        "service": "Google Slides Automation API",
+        "version": "1.0.0",
+        "message": "Archivo frontend no encontrado",
+        "endpoints": {
+            "extract_ids": "POST /api/extract-slide-ids",
+            "get_components": "POST /api/get-slide-components",
+            "health": "GET /api/health"
         }
+    }
 
-    
-    # ENDPOINT: Health Check
-    
-    @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
-    async def health_check():
-        """
-        Verificar estado del servicio.
-        Comprueba que el archivo de credenciales existe.
-        """
-        credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
-
-        if not os.path.exists(credentials_path):
-            logger.warning(f"⚠ Archivo de credenciales no encontrado: {credentials_path}")
-            return HealthResponse(
-                status="warning",
-                message=f"Archivo de credenciales no encontrado en {credentials_path}"
-            )
-
+@app.get("/api/health", response_model=HealthResponse, tags=["Health"])
+#Verificar estado del servicio y archivo de credenciales
+async def health_check():
+    try:
+        validate_credentials()
         return HealthResponse(
             status="healthy",
             message="Servicio activo y listo"
         )
+    except HTTPException as e:
+        logger.warning("⚠ Credenciales no encontradas")
+        return HealthResponse(
+            status="warning",
+            message="Archivo de credenciales no configurado"
+        )
 
-
- 
-# Monta la carpeta `static` para servir CSS/JS/otros recursos
+# Montar carpeta de recursos estáticos
 if os.path.exists('./static'):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
 @app.post("/api/extract-slide-ids", response_model=ExtractSlideIdsResponse, tags=["Slides"])
+#Extrae identificadores ($) de todas las slides
 async def extract_slide_ids(request: ExtractSlideIdsRequest):
-    # Define ruta POST para extraer identificadores estructurales
     try:
-        # Obtiene la ruta del archivo de credenciales desde la variable de entorno
-        credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
-        
-        # Validación: verifica que el archivo de credenciales existe
-        if not os.path.exists(credentials_path):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Archivo de credenciales no encontrado: {credentials_path}"
-            )
-        
-        # Inicializa la automatización con las credenciales
-        automation = GoogleSlidesAutomation(credentials_path)
-        
-        # Llama extraer los identificadores
+        automation = create_automation(validate_credentials())
         slide_identifiers = automation.extract_slide_ids(request.presentation_url)
         
         logger.info(f"✓ Se extrajeron {len(slide_identifiers)} identificadores")
-        
         return ExtractSlideIdsResponse(
             success=True,
             slide_identifiers=slide_identifiers,
             message=f"Se encontraron {len(slide_identifiers)} slides con identificadores"
         )
-    
-    except ValueError as e:
-        logger.error(f"✗ Error de validación: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"URL inválida: {str(e)}"
-        )
     except Exception as e:
-        logger.error(f"✗ Error inesperado: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al procesar la solicitud: {str(e)}"
-        )
-
+        handle_api_error("extrayendo IDs de slides", e)
 
 @app.post("/api/get-slide-components", response_model=GetSlideComponentsResponse, tags=["Slides"])
+# Obtiene componentes (#) de una slide específica
 async def get_slide_components(request: GetSlideComponentsRequest):
-    # Define ruta POST para obtener variables de datos #
     try:
-        # Obtiene la ruta del archivo de credenciales
-        credentials_path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
-        
-        # Validación: verifica que el archivo existe
-        if not os.path.exists(credentials_path):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Archivo de credenciales no encontrado: {credentials_path}"
-            )
-        
-        # Validación: verifica que el índice sea válido
         if request.slide_index < 0:
-            raise HTTPException(
-                status_code=400,
-                detail="El índice de slide debe ser >= 0"
-            )
+            raise ValueError("El índice de slide debe ser >= 0")
         
-        # Inicializa la automatización
-        automation = GoogleSlidesAutomation(credentials_path)
-        
-        # Llama a obtener los componentes
+        automation = create_automation(validate_credentials())
         components = automation.get_slide_components(
             request.presentation_url,
             request.slide_index
         )
         
         logger.info(f"✓ Se extrajeron {len(components)} componentes de slide {request.slide_index}")
-        
         return GetSlideComponentsResponse(
             success=True,
             slide_index=request.slide_index,
             components=components,
             message=f"Se encontraron {len(components)} componentes en la slide {request.slide_index}"
         )
-    
-    except ValueError as e:
-        logger.error(f"✗ Error de validación: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"URL inválida: {str(e)}"
-        )
     except Exception as e:
-        logger.error(f"✗ Error inesperado: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al procesar la solicitud: {str(e)}"
-         )
-    
+        handle_api_error("obteniendo componentes", e)
 
 
-# Punto de entrada para ejecución directa del script
+@app.post("/api/copy-presentation", tags=["Slides"])
+#Copia una presentación completa a una carpeta de Drive
+async def copy_presentation(request: CopyPresentationRequest):
+    try:
+        automation = create_automation(validate_credentials())
+        new_id = automation.copy_presentation_to_folder(
+            request.presentation_url,
+            request.folder_url_or_id,
+            request.new_name
+        )
+        new_url = f"https://docs.google.com/presentation/d/{new_id}/edit"
+        return {
+            "success": True,
+            "new_presentation_id": new_id,
+            "new_presentation_url": new_url,
+            "message": "Copia completa creada correctamente"
+        }
+    except Exception as e:
+        handle_api_error("copiando presentación", e)
+
+@app.post("/api/list-slides", response_model=ListSlidesResponse, tags=["Slides"])
+# Lista todas las slides de una presentación
+async def list_slides(request: ListSlidesRequest):
+    try:
+        automation = create_automation(validate_credentials())
+        slides = automation.get_presentation_slides(request.presentation_url)
+        return {
+            "success": True,
+            "slides": slides,
+            "message": f"Se encontraron {len(slides)} slides"
+        }
+    except Exception as e:
+        handle_api_error("listando slides", e)
+
+@app.post("/api/copy-custom", tags=["Slides"])
+# Copia avanzada con reordenamiento - slide_sequence tiene prioridad sobre slide_counts
+async def copy_custom(request: CustomCopyRequest):
+    try:
+        automation = create_automation(validate_credentials())
+        slide_counts = request.slide_counts if request.slide_counts else {}
+        
+        new_id = automation.copy_presentation_advanced(
+            request.presentation_url,
+            slide_counts,
+            request.folder_url_or_id,
+            request.new_name,
+            request.slide_sequence
+        )
+        
+        new_url = f"https://docs.google.com/presentation/d/{new_id}/edit"
+        return {
+            "success": True,
+            "new_presentation_id": new_id,
+            "new_presentation_url": new_url,
+            "message": "Copia personalizada creada correctamente"
+        }
+    except Exception as e:
+        handle_api_error("copiando presentación personalizada", e)
+
+@app.post("/api/verify-access", tags=["Slides"])
+# Verifica si el Service Account tiene acceso a una presentación
+async def verify_access(request: ExtractSlideIdsRequest):
+    try:
+        automation = create_automation(validate_credentials())
+        access_info = automation.verify_presentation_access(request.presentation_url)
+
+        return {
+            "success": True,
+            **access_info,
+            "message": "Acceso verificado" if access_info['overall_access'] else "⚠ Acceso limitado"
+        }
+    except Exception as e:
+        handle_api_error("verificando acceso", e)
+
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv('PORT', 8000))
@@ -252,11 +272,10 @@ if __name__ == "__main__":
     ╚════════════════════════════════════════╝
     """)
     
-    # Inicia el servidor con hot-reload para desarrollo
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
         port=port,
-        reload=True,  # Recargar automáticamente si cambia algún archivo (.py)
+        reload=True,
         log_level="info"
     )

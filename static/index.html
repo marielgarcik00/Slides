@@ -185,7 +185,55 @@
                 </div>
             </section>
 
-            <!-- SECCIÓN 3: INFORMACIÓN Y GUÍA -->
+            <!-- SECCIÓN 4: RELLENAR SLIDE DESCRIPTIVA -->
+            <section class="feature-card">
+                <div class="card-header">
+                    <h2>📝 4. Rellenar slide descriptiva desde PDF/DOCX</h2>
+                    <p class="description">Sube un archivo, extrae título y descripción y reemplaza los marcadores de una slide con identificador <code>$</code>.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="url-upload">URL de la Presentación:</label>
+                    <input type="text" id="url-upload" placeholder="https://docs.google.com/presentation/d/..." class="input-field">
+
+                    <label for="slide-identifier">Identificadores de la slide (ej: $descriptive $presentation):</label>
+                    <input type="text" id="slide-identifier" placeholder="$descriptive $presentation" class="input-field">
+
+                    <label for="folder-upload">Carpeta de Destino (URL o ID, opcional):</label>
+                    <input type="text" id="folder-upload" placeholder="https://drive.google.com/drive/folders/..." class="input-field">
+
+                    <label for="name-upload">Nombre de la copia (opcional):</label>
+                    <input type="text" id="name-upload" placeholder="Ej: Presentación generada" class="input-field">
+
+                    <label for="file-upload">Archivo (PDF o DOCX):</label>
+                    <input type="file" id="file-upload" accept=".pdf,.docx" class="input-field">
+
+                    <button id="btn-upload-fill" class="btn btn-primary" onclick="uploadAndFill()">
+                        ⬆️ Subir y reemplazar contenido
+                    </button>
+                </div>
+
+                <div id="result-upload" class="result-container" style="display:none;">
+                    <div class="result-header success">
+                        ✓ Contenido actualizado
+                    </div>
+                    <div id="output-upload" class="output-text"></div>
+                </div>
+
+                <div id="error-upload" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">
+                        ✗ Error
+                    </div>
+                    <div id="error-text-upload" class="error-text"></div>
+                </div>
+
+                <div id="loading-upload" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Procesando archivo...</p>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 5: INFORMACIÓN Y GUÍA -->
             <section class="feature-card info-card">
                 <div class="card-header">
                     <h2>ℹ️ Información</h2>

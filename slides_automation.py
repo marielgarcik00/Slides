@@ -1,5 +1,4 @@
 
-# pyright: reportAttributeAccessIssue=false
 import re  # Librería para buscar patrones de texto como # y $
 from typing import Any, List, Dict, Set, cast  # Define tipos de datos para listas y diccionarios
 from google.oauth2 import service_account  # Gestiona la key de la Service Account
@@ -280,6 +279,173 @@ class GoogleSlidesAutomation:
         except Exception as e:
             logger.error(f"Error obteniendo slides: {str(e)}")
             raise
+
+    # Usa extract_slide_ids para ubicar el índice de la slide que contenga TODOS los identificadores $ solicitados.
+    def _find_slide_index_by_identifiers(self, presentation_url: str, required_identifiers: List[str]) -> int:
+        if not required_identifiers:
+            return -1
+
+        normalized_ids = {i.lower() for i in required_identifiers}
+        slide_map = self.extract_slide_ids(presentation_url)
+        for idx, ids in slide_map.items():
+            ids_lower = {i.lower() for i in ids}
+            if normalized_ids.issubset(ids_lower):
+                return idx
+        return -1
+
+    def replace_components_in_slide(
+        self,
+        presentation_url: str,
+        slide_identifiers: List[str],
+        replacements: Dict[str, str],
+        require_all_markers: bool = False
+    ) -> Dict[str, Any]:
+        normalized_ids = self._normalize_slide_identifiers(slide_identifiers)
+        if not replacements:
+            raise ValueError("El diccionario de reemplazos está vacío.")
+
+        presentation_id, target_slide, target_index = self._get_target_slide(
+            presentation_url,
+            normalized_ids
+        )
+
+        target_slide_id = target_slide['objectId']
+        target_slide_identifiers = {m.lower() for m in self._find_all_components_in_slide(target_slide, '$')}
+        target_slide_components = {m.lower() for m in self._find_all_components_in_slide(target_slide, '#')}
+
+        normalized_replacements, semantic = self._normalize_replacements(replacements)
+        self._validate_required_markers(target_slide_components, normalized_replacements, require_all_markers)
+
+        replacement_requests, applied = self._build_component_requests(
+            target_slide_id,
+            target_slide_components,
+            normalized_replacements,
+            semantic
+        )
+        cleanup_requests = self._build_identifier_cleanup_requests(target_slide_id, target_slide_identifiers)
+
+        requests = replacement_requests + cleanup_requests
+        if not requests:
+            raise ValueError("No se encontraron en la slide los marcadores a reemplazar.")
+
+        self.service.presentations().batchUpdate(
+            presentationId=presentation_id,
+            body={'requests': requests}
+        ).execute()
+
+        logger.info(
+            "✓ Reemplazados %s componentes en slide con IDs %s",
+            len(requests),
+            ", ".join(normalized_ids)
+        )
+        return {
+            'presentation_id': presentation_id,
+            'slide_identifier': ", ".join(normalized_ids),
+            'replaced': applied,
+            'slide_index': target_index
+        }
+
+    def _normalize_slide_identifiers(self, slide_identifiers: List[str]) -> List[str]:
+        """Asegura formato $ident y limpieza básica de los IDs de slide."""
+        if not slide_identifiers:
+            raise ValueError("Se requiere al menos un identificador de slide (ej: $descriptive).")
+
+        normalized = [
+            ident if ident.startswith('$') else f"${ident}"
+            for ident in slide_identifiers
+        ]
+        normalized = [i.lower() for i in normalized if i and i.strip()]
+        if not normalized:
+            raise ValueError("No se proporcionaron identificadores válidos.")
+        return normalized
+
+    def _get_target_slide(self, presentation_url: str, normalized_ids: List[str]):
+        """Obtiene la slide que contiene todos los identificadores solicitados."""
+        target_index = self._find_slide_index_by_identifiers(presentation_url, normalized_ids)
+        if target_index < 0:
+            raise ValueError(
+                f"No se encontró una slide que contenga los identificadores: {', '.join(normalized_ids)}"
+            )
+
+        presentation_id = self._extract_presentation_id(presentation_url)
+        presentation = self.service.presentations().get(presentationId=presentation_id).execute()
+        slides = presentation.get('slides', [])
+        if target_index >= len(slides):
+            raise ValueError("Índice de slide fuera de rango tras la búsqueda de identificadores.")
+
+        return presentation_id, slides[target_index], target_index
+
+    def _normalize_replacements(self, replacements: Dict[str, str]):
+        """Normaliza claves de reemplazo y detecta valores semánticos comunes."""
+        normalized: Dict[str, str] = {}
+        semantic = {'title': None, 'description': None}
+
+        for key, value in replacements.items():
+            if value is None:
+                continue
+            base = (key[1:] if key.startswith('#') else key).lower()
+            normalized[base] = value
+            if any(tag in base for tag in ['title', 'titulo', 'heading', 'main']):
+                semantic['title'] = semantic['title'] or value
+            if any(tag in base for tag in ['description', 'descripcion', 'body', 'texto']):
+                semantic['description'] = semantic['description'] or value
+
+        return normalized, semantic
+
+    def _validate_required_markers(self, target_components: Set[str], normalized_replacements: Dict[str, str], require_all: bool):
+        if not require_all:
+            return
+        missing = [f"#{k}" for k in normalized_replacements.keys() if f"#{k}" not in target_components]
+        if missing:
+            raise ValueError(f"Faltan en la slide los marcadores: {', '.join(missing)}")
+
+    def _build_component_requests(
+        self,
+        slide_id: str,
+        target_components: Set[str],
+        normalized_replacements: Dict[str, str],
+        semantic: Dict[str, str]
+    ) -> (List[Dict], List[str]):
+        """Crea solicitudes de reemplazo para los marcadores # de la slide."""
+        requests: List[Dict] = []
+        applied: List[str] = []
+
+        for marker in target_components:
+            base = marker.lstrip('#').lower()
+            value = None
+            if any(tag in base for tag in ['title', 'titulo', 'heading', 'main']):
+                value = semantic.get('title') or normalized_replacements.get(base)
+            elif any(tag in base for tag in ['description', 'descripcion', 'body', 'texto']):
+                value = semantic.get('description') or normalized_replacements.get(base)
+            elif base in normalized_replacements:
+                value = normalized_replacements[base]
+            else:
+                value = semantic.get('description') or semantic.get('title')
+
+            if value:
+                requests.append({
+                    'replaceAllText': {
+                        'containsText': {'text': marker, 'matchCase': False},
+                        'replaceText': value,
+                        'pageObjectIds': [slide_id]
+                    }
+                })
+                applied.append(marker)
+
+        return requests, applied
+
+    def _build_identifier_cleanup_requests(self, slide_id: str, identifiers: Set[str]) -> List[Dict]:
+        """Genera solicitudes para eliminar identificadores $ una vez usados."""
+        requests: List[Dict] = []
+        for ident in identifiers:
+            requests.append({
+                'replaceAllText': {
+                    'containsText': {'text': ident, 'matchCase': False},
+                    'replaceText': '',
+                    'pageObjectIds': [slide_id]
+                }
+            })
+        return requests
 
 
     #Dependiendo de los requerimientos del usuario, ya sea que necesite ajustar cantidades o realizar un reordenamiento total de la presentación, el sistema define automáticamente qué función ejecutar

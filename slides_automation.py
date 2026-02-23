@@ -1,5 +1,6 @@
 
 import re  # Librería para buscar patrones de texto como # y $
+import json
 from typing import Any, List, Dict, Set, cast  # Define tipos de datos para listas y diccionarios
 from google.oauth2 import service_account  # Gestiona la key de la Service Account
 from googleapiclient.discovery import build  # Crea la conexión con la API de Google
@@ -359,8 +360,8 @@ class GoogleSlidesAutomation:
             raise ValueError("No se proporcionaron identificadores válidos.")
         return normalized
 
+    # Obtiene la slide que contiene todos los identificadores solicitados
     def _get_target_slide(self, presentation_url: str, normalized_ids: List[str]):
-        """Obtiene la slide que contiene todos los identificadores solicitados."""
         target_index = self._find_slide_index_by_identifiers(presentation_url, normalized_ids)
         if target_index < 0:
             raise ValueError(
@@ -375,8 +376,9 @@ class GoogleSlidesAutomation:
 
         return presentation_id, slides[target_index], target_index
 
+    # Normaliza claves de reemplazo y detecta valores semánticos comunes
     def _normalize_replacements(self, replacements: Dict[str, str]):
-        """Normaliza claves de reemplazo y detecta valores semánticos comunes."""
+       
         normalized: Dict[str, str] = {}
         semantic = {'title': None, 'description': None}
 
@@ -434,8 +436,8 @@ class GoogleSlidesAutomation:
 
         return requests, applied
 
+    # Genera solicitudes para eliminar identificadores $ una vez usados
     def _build_identifier_cleanup_requests(self, slide_id: str, identifiers: Set[str]) -> List[Dict]:
-        """Genera solicitudes para eliminar identificadores $ una vez usados."""
         requests: List[Dict] = []
         for ident in identifiers:
             requests.append({
@@ -447,6 +449,85 @@ class GoogleSlidesAutomation:
             })
         return requests
 
+    # ---------------------------
+    # Rellenar toda la presentación con JSON
+    # ---------------------------
+    def fill_presentation_from_json(
+        self,
+        presentation_url: str,
+        data: Dict[str, Any],
+        folder_url_or_id: str = "",
+        new_name: str = None,
+        remove_identifiers: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Recorre todas las slides, reemplaza marcadores # con los valores del JSON y limpia los $.
+        Si se pasa new_name o folder_url_or_id, primero crea una copia; de lo contrario, edita la original.
+        """
+        if not data:
+            raise ValueError("El JSON de datos está vacío.")
+
+        # Decide si trabajamos sobre copia o el original
+        if new_name or folder_url_or_id:
+            target_presentation_id = self.copy_presentation_to_folder(presentation_url, folder_url_or_id, new_name)
+        else:
+            target_presentation_id = self._extract_presentation_id(presentation_url)
+
+        presentation = self.service.presentations().get(presentationId=target_presentation_id).execute()
+        slides = presentation.get('slides', [])
+
+        normalized_data: Dict[str, str] = {}
+        for k, v in data.items():
+            if v is None:
+                continue
+            key = k.lower().lstrip('#')
+            normalized_data[key] = str(v)
+
+        requests: List[Dict] = []
+        applied: List[str] = []
+
+        for slide in slides:
+            slide_id = slide['objectId']
+            components = {m.lower() for m in self._find_all_components_in_slide(slide, '#')}
+            identifiers = {m for m in self._find_all_components_in_slide(slide, '$')} if remove_identifiers else set()
+
+            # Reemplazos de #
+            for marker in components:
+                base = marker.lstrip('#').lower()
+                if base in normalized_data:
+                    requests.append({
+                        'replaceAllText': {
+                            'containsText': {'text': marker, 'matchCase': False},
+                            'replaceText': normalized_data[base],
+                            'pageObjectIds': [slide_id]
+                        }
+                    })
+                    applied.append(marker)
+
+            # Limpieza de $
+            for ident in identifiers:
+                requests.append({
+                    'replaceAllText': {
+                        'containsText': {'text': ident, 'matchCase': False},
+                        'replaceText': '',
+                        'pageObjectIds': [slide_id]
+                    }
+                })
+
+        if not requests:
+            raise ValueError("No se encontraron marcadores # en la presentación o no hubo datos coincidentes.")
+
+        self.service.presentations().batchUpdate(
+            presentationId=target_presentation_id,
+            body={'requests': requests}
+        ).execute()
+
+        return {
+            'presentation_id': target_presentation_id,
+            'replaced': applied,
+            'total_replacements': len(applied),
+            'requests_sent': len(requests)
+        }
 
     #Dependiendo de los requerimientos del usuario, ya sea que necesite ajustar cantidades o realizar un reordenamiento total de la presentación, el sistema define automáticamente qué función ejecutar
     def copy_presentation_advanced(self, presentation_url: str, slide_counts: Dict[int, int], folder_url_or_id: str, new_name: str = None, slide_sequence: List[int] = None) -> str:

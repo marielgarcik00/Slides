@@ -460,24 +460,28 @@ function showAdvancedResult(data) {
 }
 
 // ========================================================================
-// FUNCIÓN 4: SUBIR ARCHIVO Y REEMPLAZAR MARCADORES
+// FUNCIÓN 4: RELLENAR PRESENTACIÓN CON JSON
 // ========================================================================
 
-async function uploadAndFill() {
+async function fillWithJson() {
     const presentationUrl = document.getElementById('url-upload').value.trim();
-    const slideIdentifier = (document.getElementById('slide-identifier').value.trim() || '$descriptive');
     const folder = document.getElementById('folder-upload').value.trim();
     const newName = document.getElementById('name-upload').value.trim();
-    const fileInput = document.getElementById('file-upload');
-    const file = fileInput?.files?.[0];
+    const jsonText = document.getElementById('json-upload').value.trim();
 
     if (!presentationUrl || !presentationUrl.includes('docs.google.com/presentation')) {
         showError('upload', 'Ingresa una URL de presentación válida.');
         return;
     }
+    if (!jsonText) {
+        showError('upload', 'Pega un JSON con los valores.');
+        return;
+    }
 
-    if (!file) {
-        showError('upload', 'Selecciona un archivo PDF o DOCX.');
+    try {
+        JSON.parse(jsonText);
+    } catch (e) {
+        showError('upload', 'JSON inválido: ' + e.message);
         return;
     }
 
@@ -487,19 +491,19 @@ async function uploadAndFill() {
 
         const formData = new FormData();
         formData.append('presentation_url', presentationUrl);
-        formData.append('slide_identifier', slideIdentifier);
         formData.append('folder_url_or_id', folder);
         formData.append('new_name', newName);
-        formData.append('file', file);
+        formData.append('data_json', jsonText);
+        formData.append('remove_identifiers', 'true');
 
-        const response = await fetch(`${API_BASE_URL}/api/upload-and-fill`, {
+        const response = await fetch(`${API_BASE_URL}/api/fill-from-json`, {
             method: 'POST',
             body: formData
         });
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.detail || data.message || 'Error al reemplazar contenido.');
+            throw new Error(data.detail || data.message || 'Error al rellenar presentación.');
         }
 
         showUploadResult(data);
@@ -514,12 +518,11 @@ async function uploadAndFill() {
 
 function showUploadResult(data) {
     const outputDiv = document.getElementById('output-upload');
-    const identifiers = (data.applied_replacements || data.replaced || []).join(', ');
+    const identifiers = (data.replaced || []).join(', ');
     outputDiv.innerHTML = `
-        Slide objetivo: <strong>${data.slide_identifier}</strong><br>
         Marcadores reemplazados: <strong>${identifiers || 'N/D'}</strong><br>
-        <a href="${data.new_presentation_url}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir copia generada</a><br>
-        <span style="font-size:0.85em; color:#666;">Título y descripción fueron extraídos del archivo subido.</span>
+        <a href="${data.new_presentation_url || data.presentation_url}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación</a><br>
+        <span style="font-size:0.85em; color:#666;">Solo se reemplazaron los marcadores presentes en el JSON. Los $ fueron limpiados.</span>
     `;
 }
 

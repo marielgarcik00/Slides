@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from typing import Dict, List
 import os
 import io
+import json
+import tempfile
 from dotenv import load_dotenv
 import logging
 from PyPDF2 import PdfReader
@@ -273,70 +275,46 @@ async def copy_custom(request: CustomCopyRequest):
         handle_api_error("copiando presentación personalizada", e)
 
 
-@app.post("/api/upload-and-fill", tags=["Slides"])
-async def upload_and_fill(
+@app.post("/api/fill-from-json", tags=["Slides"])
+async def fill_from_json(
     presentation_url: str = Form(...),
-    slide_identifier: str = Form(...),
     folder_url_or_id: str = Form(""),
     new_name: str = Form(None),
-    file: UploadFile = File(...)
+    data_json: str = Form(...),
+    remove_identifiers: bool = Form(True)
 ):
     """
-    Sube un PDF o DOCX, crea una copia de la presentación, extrae título/descripcion y reemplaza marcadores (#) en la slide con $identificador.
-    Marcadores soportados: #title, #titulo, #description, #descripcion.
+    Recibe un JSON con pares clave-valor para marcadores # y llena toda la presentación.
+    Si se pasa carpeta o nombre, primero crea una copia; de lo contrario, edita la presentación indicada.
     """
     try:
         if not presentation_url or 'docs.google.com/presentation' not in presentation_url:
             raise ValueError("URL de presentación inválida.")
 
-        ext = os.path.splitext(file.filename or "")[1].lower()
-        raw_bytes = await file.read()
-
-        if ext == ".pdf":
-            text = _extract_text_from_pdf(raw_bytes)
-        elif ext == ".docx":
-            text = _extract_text_from_docx(raw_bytes)
-        else:
-            raise ValueError("Formato no soportado. Usa PDF o DOCX.")
-
-        if not text:
-            raise ValueError("No se pudo extraer texto del archivo proporcionado.")
-
-        parts = _split_title_description(text)
-        replacements = {
-            "title": parts["title"],
-            "description": parts["description"]
-        }
+        try:
+            data = json.loads(data_json)
+        except Exception as e:
+            raise ValueError(f"JSON inválido: {e}")
 
         automation = create_automation(validate_credentials())
-        # Crear copia primero
-        new_presentation_id = automation.copy_presentation_to_folder(
-            presentation_url,
-            folder_url_or_id,
-            new_name
-        )
-        new_presentation_url = f"https://docs.google.com/presentation/d/{new_presentation_id}/edit"
-
-        identifiers_list = [token for token in slide_identifier.split() if token.strip()]
-        result = automation.replace_components_in_slide(
-            new_presentation_url,
-            identifiers_list,
-            replacements,
-            require_all_markers=False
+        result = automation.fill_presentation_from_json(
+            presentation_url=presentation_url,
+            data=data,
+            folder_url_or_id=folder_url_or_id,
+            new_name=new_name,
+            remove_identifiers=bool(remove_identifiers)
         )
 
+        new_url = f"https://docs.google.com/presentation/d/{result['presentation_id']}/edit"
         return {
             "success": True,
-            "slide_identifier": slide_identifier,
-            "applied_replacements": list(replacements.keys()),
-            "message": "Contenido actualizado en la presentación",
-            "new_presentation_id": new_presentation_id,
-            "new_presentation_url": new_presentation_url,
+            "message": "Presentación actualizada",
+            "new_presentation_id": result['presentation_id'],
+            "new_presentation_url": new_url,
             **result
         }
-
     except Exception as e:
-        handle_api_error("cargando archivo y reemplazando contenido", e)
+        handle_api_error("rellenando presentación con JSON", e)
 
 @app.post("/api/verify-access", tags=["Slides"])
 # Verifica si el Service Account tiene acceso a una presentación

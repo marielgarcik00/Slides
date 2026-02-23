@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Google Slides Automation Tool (v2.1)</title>
-    <link rel="stylesheet" href="/static/styles.css?v=8">
+    <link rel="stylesheet" href="/static/styles.css?v=11">
 </head>
 
 <body>
@@ -185,19 +185,16 @@
                 </div>
             </section>
 
-            <!-- SECCIÓN 4: RELLENAR SLIDE DESCRIPTIVA -->
+            <!-- SECCIÓN 4: RELLENAR PRESENTACIÓN CON JSON -->
             <section class="feature-card">
                 <div class="card-header">
-                    <h2>📝 4. Rellenar slide descriptiva desde PDF/DOCX</h2>
-                    <p class="description">Sube un archivo, extrae título y descripción y reemplaza los marcadores de una slide con identificador <code>$</code>.</p>
+                    <h2>📝 4. Rellenar presentación con JSON</h2>
+                    <p class="description">Envía un JSON con los valores para marcadores <code>#</code>. Se limpia cualquier <code>$</code> y solo se reemplazan las claves presentes.</p>
                 </div>
 
                 <div class="form-group">
                     <label for="url-upload">URL de la Presentación:</label>
                     <input type="text" id="url-upload" placeholder="https://docs.google.com/presentation/d/..." class="input-field">
-
-                    <label for="slide-identifier">Identificadores de la slide (ej: $descriptive $presentation):</label>
-                    <input type="text" id="slide-identifier" placeholder="$descriptive $presentation" class="input-field">
 
                     <label for="folder-upload">Carpeta de Destino (URL o ID, opcional):</label>
                     <input type="text" id="folder-upload" placeholder="https://drive.google.com/drive/folders/..." class="input-field">
@@ -205,11 +202,11 @@
                     <label for="name-upload">Nombre de la copia (opcional):</label>
                     <input type="text" id="name-upload" placeholder="Ej: Presentación generada" class="input-field">
 
-                    <label for="file-upload">Archivo (PDF o DOCX):</label>
-                    <input type="file" id="file-upload" accept=".pdf,.docx" class="input-field">
+                    <label for="json-upload">JSON de datos (clave -> valor):</label>
+                    <textarea id="json-upload" rows="6" class="input-field" placeholder='{"title":"Mi título","description":"Texto"}'></textarea>
 
-                    <button id="btn-upload-fill" class="btn btn-primary" onclick="uploadAndFill()">
-                        ⬆️ Subir y reemplazar contenido
+                    <button id="btn-upload-fill" class="btn btn-primary" onclick="fillWithJson()">
+                        🔄 Rellenar marcadores
                     </button>
                 </div>
 
@@ -280,7 +277,7 @@
     </div>
 
     <!-- SCRIPT -->
-    <script src="/static/script.js?v=8"></script>
+    <script src="/static/script.js?v=11"></script>
 </body>
 
 </html>

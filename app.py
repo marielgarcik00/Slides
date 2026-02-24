@@ -41,7 +41,7 @@ def validate_credentials() -> str:
 def create_automation(credentials_path: str) -> GoogleSlidesAutomation:
     return GoogleSlidesAutomation(credentials_path)
 
-#Helper para loguear y re-lanzar errores de API de manera consistente
+#Helper para loguear y re-lanzar errores de API 
 def handle_api_error(context: str, error: Exception) -> None:
     logger.error(f"✗ Error {context}: {str(error)}")
     if isinstance(error, ValueError):
@@ -106,9 +106,11 @@ class CopyPresentationRequest(BaseModel):
     presentation_url: str
     folder_url_or_id: str
     new_name: str = None
+
 #Solicitud para listar slides de una presentación
 class ListSlidesRequest(BaseModel):
     presentation_url: str
+
 #Solicitud para copia con reordenamiento
 class CustomCopyRequest(BaseModel):
     presentation_url: str
@@ -116,22 +118,26 @@ class CustomCopyRequest(BaseModel):
     new_name: str = None
     slide_counts: Dict[int, int] = None
     slide_sequence: List[int] = None
+
 #Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
     success: bool
     slide_identifiers: Dict[int, List[str]]
     message: str
+
 #Respuesta con lista de slides
 class ListSlidesResponse(BaseModel):
     success: bool
     slides: List[Dict]
     message: str
+
 #Respuesta con los componentes de una slide
 class GetSlideComponentsResponse(BaseModel):
     success: bool
     slide_index: int
     components: List[str]
     message: str
+
 #Respuesta que indica el estado del servicio
 class HealthResponse(BaseModel):
     status: str
@@ -315,6 +321,7 @@ async def fill_from_json(
         }
     except Exception as e:
         handle_api_error("rellenando presentación con JSON", e)
+
 
 @app.post("/api/verify-access", tags=["Slides"])
 # Verifica si el Service Account tiene acceso a una presentación

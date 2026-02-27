@@ -23,9 +23,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Ruta base del proyecto (carpeta donde está app.py)
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 #Obtiene la ruta del archivo de credenciales
 def get_credentials_path() -> str:
-    return os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
+    path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
+    if not os.path.isabs(path):
+        path = os.path.normpath(os.path.join(PROJECT_ROOT, path))
+    return path
 
 #Valida que exista el archivo de credenciales y lo devuelve
 def validate_credentials() -> str:
@@ -119,6 +125,13 @@ class CustomCopyRequest(BaseModel):
     slide_counts: Dict[int, int] = None
     slide_sequence: List[int] = None
 
+# Solicitud para generar presentación desde especificación (slide_n → type $, content #)
+class BuildFromSpecRequest(BaseModel):
+    presentation_url: str
+    folder_url_or_id: str
+    new_name: str = None
+    spec: Dict  # ej. {"slide_1": {"type": "cover", "content": {"title": "..."}}, ...}
+
 #Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
     success: bool
@@ -157,6 +170,7 @@ async def root():
         "endpoints": {
             "extract_ids": "POST /api/extract-slide-ids",
             "get_components": "POST /api/get-slide-components",
+            "build_from_spec": "POST /api/build-from-spec",
             "health": "GET /api/health"
         }
     }
@@ -321,6 +335,42 @@ async def fill_from_json(
         }
     except Exception as e:
         handle_api_error("rellenando presentación con JSON", e)
+
+
+@app.post("/api/build-from-spec", tags=["Slides"])
+# Genera una presentación: URL plantilla + carpeta destino + JSON spec (slide_n → type $, content #)
+async def build_from_spec(request: BuildFromSpecRequest):
+    """
+    Crea una presentación a partir de una plantilla, carpeta de destino y un JSON de especificación.
+
+    - **presentation_url**: URL de la presentación plantilla (con slides identificadas con $).
+    - **folder_url_or_id**: URL o ID de la carpeta de Drive donde guardar la copia.
+    - **spec**: JSON con claves slide_1, slide_2, ... slide_n. Cada valor tiene:
+      - **type**: identificador de la diapo plantilla (ej. "cover", "chapter") → busca la slide con $cover, $chapter.
+      - **content**: dict de reemplazos para los marcadores # (ej. {"title": "Título", "description": "..."}).
+    - **new_name**: nombre opcional de la nueva presentación.
+
+    Las diapos se ordenan según slide_1, slide_2, ... y se rellenan con su content.
+    """
+    try:
+        automation = create_automation(validate_credentials())
+        result = automation.build_presentation_from_spec(
+            presentation_url=request.presentation_url,
+            folder_url_or_id=request.folder_url_or_id,
+            spec=request.spec,
+            new_name=request.new_name,
+            remove_identifiers=True
+        )
+        return {
+            "success": True,
+            "message": "Presentación generada desde especificación",
+            "new_presentation_id": result["presentation_id"],
+            "new_presentation_url": result["presentation_url"],
+            "slides_count": result["slides_count"],
+            "slide_sequence": result["slide_sequence"],
+        }
+    except Exception as e:
+        handle_api_error("generando presentación desde spec", e)
 
 
 @app.post("/api/verify-access", tags=["Slides"])

@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Slides Automation Tool (v2.1)</title>
-    <link rel="stylesheet" href="/static/styles.css?v=11">
+    <title>Google Slides Automation Tool (v2.2)</title>
+    <link rel="stylesheet" href="/static/styles.css?v=12">
 </head>
 
 <body>
@@ -15,6 +15,7 @@
             <div class="header-content">
                 <h1>🚀 Google Slides Automation</h1>
                 <p class="subtitle">Extrae identificadores y componentes dinámicos de tus presentaciones</p>
+                <p style="margin-top:8px; font-size:0.9rem;"><a href="#section-5" class="quick-link">↓ Ir al punto 5: Generar desde spec</a></p>
             </div>
         </header>
 
@@ -230,7 +231,51 @@
                 </div>
             </section>
 
-            <!-- SECCIÓN 5: INFORMACIÓN Y GUÍA -->
+            <!-- SECCIÓN 5: GENERAR DESDE SPEC -->
+            <section id="section-5" class="feature-card">
+                <div class="card-header">
+                    <h2>📐 5. Generar presentación desde spec</h2>
+                    <p class="description">URL del template + carpeta destino + JSON con <code>slide_1</code>, <code>slide_2</code>… (<code>type</code> = $, <code>content</code> = #). Se crea una copia con solo esas slides en ese orden y se rellenan los marcadores.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="url-spec">URL de la presentación (template):</label>
+                    <input type="text" id="url-spec" placeholder="https://docs.google.com/presentation/d/..." class="input-field">
+
+                    <label for="folder-spec">Carpeta de destino (URL o ID):</label>
+                    <input type="text" id="folder-spec" placeholder="https://drive.google.com/drive/folders/..." class="input-field">
+
+                    <label for="name-spec">Nombre de la nueva presentación (opcional):</label>
+                    <input type="text" id="name-spec" placeholder="Ej: Presentación Monks - Test" class="input-field">
+
+                    <label for="json-spec">JSON del spec (slide_1, slide_2, … con type y content):</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <textarea id="json-spec" rows="14" class="input-field" style="flex:1; font-family: monospace; font-size: 0.85rem;" placeholder='{"slide_1":{"type":"cover","content":{"main_title":"..."}},...}'></textarea>
+                        <button type="button" class="btn btn-secondary" onclick="loadSpecExample()" style="white-space:nowrap;">Cargar ejemplo</button>
+                    </div>
+
+                    <button id="btn-build-spec" class="btn btn-primary" onclick="buildFromSpec()">
+                        🚀 Generar presentación
+                    </button>
+                </div>
+
+                <div id="result-spec" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Presentación generada</div>
+                    <div id="output-spec" class="output-text"></div>
+                </div>
+
+                <div id="error-spec" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">✗ Error</div>
+                    <div id="error-text-spec" class="error-text"></div>
+                </div>
+
+                <div id="loading-spec" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Generando presentación...</p>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 6: INFORMACIÓN Y GUÍA -->
             <section class="feature-card info-card">
                 <div class="card-header">
                     <h2>ℹ️ Información</h2>
@@ -272,12 +317,12 @@
 
         <!-- FOOTER -->
         <footer class="footer">
-            <p>Google Slides Automation Tool v1.0 | Basado en Google Slides API</p>
+            <p>Google Slides Automation Tool v2.2 | Basado en Google Slides API</p>
         </footer>
     </div>
 
     <!-- SCRIPT -->
-    <script src="/static/script.js?v=11"></script>
+    <script src="/static/script.js?v=12"></script>
 </body>
 
 </html>

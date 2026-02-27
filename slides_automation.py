@@ -305,7 +305,7 @@ class GoogleSlidesAutomation:
         allow_empty: bool = False
     ) -> Dict[str, Any]:
         normalized_ids = self._normalize_slide_identifiers(slide_identifiers)
-        if not replacements:
+        if not replacements and not allow_empty:
             raise ValueError("El diccionario de reemplazos está vacío.")
 
         presentation_id, target_slide, target_index = self._get_target_slide(
@@ -358,8 +358,8 @@ class GoogleSlidesAutomation:
             'slide_index': target_index
         }
 
+    # Asegura formato $ident y limpieza básica de los IDs de slide
     def _normalize_slide_identifiers(self, slide_identifiers: List[str]) -> List[str]:
-        """Asegura formato $ident y limpieza básica de los IDs de slide."""
         if not slide_identifiers:
             raise ValueError("Se requiere al menos un identificador de slide (ej: $descriptive).")
 
@@ -513,13 +513,15 @@ class GoogleSlidesAutomation:
         }
 
 
-    # Devuelve un mapa '$id' -> índice de slide en la presentación
+    # Devuelve un mapa '$id' -> índice de slide en la presentación (primera ocurrencia de cada $)
     def _map_identifier_to_index(self, presentation_url: str) -> Dict[str, int]:
         slide_map = self.extract_slide_ids(presentation_url)
         mapped: Dict[str, int] = {}
-        for idx, ids in slide_map.items():
+        for idx, ids in sorted(slide_map.items(), key=lambda x: x[0]):
             for ident in ids:
-                mapped[ident.lower()] = idx
+                key = ident.lower()
+                if key not in mapped:
+                    mapped[key] = idx
         return mapped
 
     # Duplica una slide y devuelve el nuevo objectId
@@ -682,6 +684,99 @@ class GoogleSlidesAutomation:
             'replaced': applied,
             'total_replacements': len(applied),
             'requests_sent': len(change_reqs)
+        }
+
+    # Convierte el JSON de especificación en una lista ordenada por posición.
+    # Cada elemento tiene: position (int), type ($identifier), content (dict para #).
+    def _parse_spec_to_ordered_slides(self, spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+        import re
+        ordered = []
+        for key, value in spec.items():
+            if not isinstance(value, dict) or 'type' not in value:
+                continue
+            m = re.match(r'slide_(\d+)', key, re.IGNORECASE)
+            position = int(m.group(1)) if m else (len(ordered) + 1)
+            slide_type = (value.get('type') or '').strip()
+            if not slide_type:
+                continue
+            if not slide_type.startswith('$'):
+                slide_type = f'${slide_type}'
+            content = value.get('content')
+            if not isinstance(content, dict):
+                content = {}
+            content = {k: str(v) for k, v in content.items() if v is not None}
+            ordered.append({
+                'position': position,
+                'type': slide_type.lower(),
+                'content': content
+            })
+        ordered.sort(key=lambda x: x['position'])
+        return ordered
+
+
+        """
+        Genera una presentación a partir de una URL de plantilla, carpeta de destino y un JSON de especificación.
+
+        - slide_n: posición (1-based) de la diapositiva en la presentación final.
+        - type: identificador de la plantilla ($), ej. "cover" o "$cover" → slide con $cover.
+        - content: diccionario de reemplazos para los marcadores # (ej. {"title": "Título"}).
+
+        Crea una copia, reordena las slides según la secuencia indicada y rellena cada una con su content.
+        """
+    def build_presentation_from_spec(
+        self,
+        presentation_url: str,
+        folder_url_or_id: str,
+        spec: Dict[str, Any],
+        new_name: str = None,
+        remove_identifiers: bool = True
+    ) -> Dict[str, Any]:
+        if not spec:
+            raise ValueError("El JSON de especificación está vacío.")
+
+        ordered = self._parse_spec_to_ordered_slides(spec)
+        if not ordered:
+            raise ValueError("No se encontraron entradas válidas (slide_1, slide_2, ... con 'type' y opcionalmente 'content').")
+
+        id_to_index = self._map_identifier_to_index(presentation_url)
+        slide_sequence = []
+        for item in ordered:
+            type_key = item['type'].lower()
+            if not type_key.startswith('$'):
+                type_key = f'${type_key}'
+            idx = id_to_index.get(type_key)
+            if idx is None:
+                raise ValueError(
+                    f"No se encontró ninguna slide con el identificador '{item['type']}' en la plantilla. "
+                    f"Identificadores disponibles: {list(id_to_index.keys())}"
+                )
+            slide_sequence.append(idx)
+
+        new_presentation_id = self.copy_presentation_advanced(
+            presentation_url,
+            slide_counts={},
+            folder_url_or_id=folder_url_or_id,
+            new_name=new_name or "Presentación generada",
+            slide_sequence=slide_sequence
+        )
+        new_url = f"https://docs.google.com/presentation/d/{new_presentation_id}/edit"
+
+        for i, item in enumerate(ordered):
+            self.replace_components_in_slide(
+                presentation_url=new_url,
+                slide_identifiers=[item['type']],
+                replacements=item['content'] or {},
+                slide_index_override=i,
+                require_all_markers=False,
+                allow_empty=True
+            )
+
+        logger.info("✓ Presentación generada desde especificación: %s", new_presentation_id)
+        return {
+            'presentation_id': new_presentation_id,
+            'presentation_url': new_url,
+            'slides_count': len(ordered),
+            'slide_sequence': slide_sequence,
         }
 
     #Dependiendo de los requerimientos del usuario, ya sea que necesite ajustar cantidades o realizar un reordenamiento total de la presentación, el sistema define automáticamente qué función ejecutar

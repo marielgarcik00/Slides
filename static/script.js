@@ -527,7 +527,114 @@ function showUploadResult(data) {
 }
 
 // ========================================================================
-// FUNCIÓN 5: VERIFICAR ESTADO DEL SERVICIO
+// FUNCIÓN 5: GENERAR DESDE SPEC
+// ========================================================================
+
+const SPEC_EXAMPLE = {
+  slide_1: {
+    type: "cover",
+    content: {
+      main_title: "Presentación de testeo",
+      footer_context: "Contexto opcional"
+    }
+  },
+  slide_2: {
+    type: "chapter",
+    content: {
+      section_title: "Introducción",
+      chapter: "Capítulo 1",
+      _number: "1"
+    }
+  },
+  slide_3: {
+    type: "descriptive",
+    content: {
+      main_title: "Resumen ejecutivo",
+      description: "Este es el texto descriptivo de la diapositiva. Podés poner todo el contenido que necesites para probar el reemplazo de los marcadores."
+    }
+  },
+  slide_4: {
+    type: "three",
+    content: {
+      item_1_title: "Primer ítem",
+      item_1_description: "Descripción del primer punto.",
+      item_2_title: "Segundo ítem",
+      item_2_description: "Descripción del segundo punto.",
+      item_3_title: "Tercer ítem",
+      item_3_description: "Descripción del tercer punto."
+    }
+  },
+  slide_5: {
+    type: "comparative",
+    content: {
+      main_title: "Comparativa",
+      column_1_title: "Opción A",
+      column_1_description: "Detalle de la opción A.",
+      column_2_title: "Opción B",
+      column_2_description: "Detalle de la opción B."
+    }
+  }
+};
+
+function loadSpecExample() {
+  document.getElementById('name-spec').value = 'Presentación Monks - Test';
+  document.getElementById('json-spec').value = JSON.stringify(SPEC_EXAMPLE, null, 2);
+}
+
+async function buildFromSpec() {
+  const presentationUrl = document.getElementById('url-spec').value.trim();
+  const folderUrl = document.getElementById('folder-spec').value.trim();
+  const newName = document.getElementById('name-spec').value.trim();
+  const jsonSpec = document.getElementById('json-spec').value.trim();
+
+  if (!presentationUrl || !presentationUrl.includes('docs.google.com/presentation')) {
+    showError('spec', 'Ingresá la URL del template (Google Slides).');
+    return;
+  }
+  if (!folderUrl) {
+    showError('spec', 'Ingresá la carpeta de destino (URL o ID de Drive).');
+    return;
+  }
+  if (!jsonSpec) {
+    showError('spec', 'Ingresá el JSON del spec (o usá "Cargar ejemplo").');
+    return;
+  }
+
+  let spec;
+  try {
+    spec = JSON.parse(jsonSpec);
+  } catch (e) {
+    showError('spec', 'JSON inválido: ' + e.message);
+    return;
+  }
+
+  try {
+    setUIState('spec', 'loading');
+    setButtonState('btn-build-spec', true);
+
+    const data = await apiFetch('/api/build-from-spec', {
+      presentation_url: presentationUrl,
+      folder_url_or_id: folderUrl,
+      new_name: newName || null,
+      spec: spec
+    });
+
+    const output = document.getElementById('output-spec');
+    output.innerHTML = `
+      <a href="${data.new_presentation_url}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación</a><br>
+      <span style="font-size:0.85em; color:#666;">Slides: ${data.slides_count} · ID: ${data.new_presentation_id}</span>
+    `;
+    showResult('spec');
+  } catch (error) {
+    console.error('Error:', error);
+    showError('spec', error.message);
+  } finally {
+    setButtonState('btn-build-spec', false);
+  }
+}
+
+// ========================================================================
+// FUNCIÓN 6: VERIFICAR ESTADO DEL SERVICIO
 // ========================================================================
 
 async function checkHealth() {
@@ -584,6 +691,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('url-advanced')?.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') previewSlides();
+    });
+
+    document.getElementById('url-spec')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') buildFromSpec();
+    });
+    document.getElementById('folder-spec')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') buildFromSpec();
     });
 
     console.log('✓ Google Slides Automation Tool cargado');

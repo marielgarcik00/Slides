@@ -527,6 +527,93 @@ function showUploadResult(data) {
 }
 
 // ========================================================================
+// GEMINI: PARSEAR TEXTO Y RELLENAR SLIDE
+// ========================================================================
+
+/**
+ * Solo parsea el texto con Gemini (no toca Slides). Para probar la API key.
+ */
+async function parseTextOnly() {
+    const text = document.getElementById('gemini-text').value.trim();
+    if (!text) {
+        showError('gemini', 'Escribí algo en el cuadro de texto.');
+        return;
+    }
+    try {
+        setUIState('gemini', 'loading');
+        setButtonState('btn-parse-text', true);
+        const data = await apiFetch('/api/parse-text', { text: text });
+        const out = document.getElementById('output-gemini');
+        out.innerHTML = `
+            <strong>Título:</strong> ${escapeHtml(data.parsed.title)}<br><br>
+            <strong>Descripción:</strong> ${escapeHtml(data.parsed.description)}
+        `;
+        showResult('gemini');
+    } catch (error) {
+        console.error('Error:', error);
+        showError('gemini', error.message);
+    } finally {
+        setButtonState('btn-parse-text', false);
+    }
+}
+
+/**
+ * Crea una copia de la plantilla en la carpeta indicada, Gemini completa los # de la slide 0.
+ * La plantilla original NUNCA se modifica.
+ */
+async function parseAndFill() {
+    const text = document.getElementById('gemini-text').value.trim();
+    const presentationUrl = document.getElementById('gemini-url').value.trim().replace(/,\s*$/, '');
+    const folderUrl = document.getElementById('gemini-folder').value.trim().replace(/,\s*$/, '');
+    const newName = document.getElementById('gemini-name').value.trim();
+    if (!text) {
+        showError('gemini', 'Escribí algo en el cuadro de texto.');
+        return;
+    }
+    if (!presentationUrl || !presentationUrl.includes('docs.google.com/presentation') || !presentationUrl.includes('/d/')) {
+        showError('gemini', 'La URL de la plantilla tiene que ser de Google Slides (ej: https://docs.google.com/presentation/d/ID/edit).');
+        return;
+    }
+    if (!folderUrl) {
+        showError('gemini', 'Indicá la carpeta de Drive donde crear la copia. La plantilla nunca se modifica.');
+        return;
+    }
+    try {
+        setUIState('gemini', 'loading');
+        setButtonState('btn-parse-fill', true);
+        const data = await apiFetch('/api/parse-and-fill', {
+            presentation_url: presentationUrl,
+            folder_url_or_id: folderUrl,
+            new_name: newName || null,
+            text: text
+        });
+        const parsedLines = data.parsed && typeof data.parsed === 'object'
+            ? Object.entries(data.parsed).map(([k, v]) => `<strong>#${k}:</strong> ${escapeHtml(String(v).substring(0, 200))}${String(v).length > 200 ? '…' : ''}`).join('<br>')
+            : '';
+        const out = document.getElementById('output-gemini');
+        const link = data.new_presentation_url || `https://docs.google.com/presentation/d/${data.presentation_id}/edit`;
+        out.innerHTML = `
+            <strong>Gemini completó estos placeholders:</strong><br>${parsedLines || '—'}<br><br>
+            <strong>Copia creada.</strong> Reemplazados: ${(data.replaced || []).join(', ')}. La plantilla no fue modificada.<br>
+            <a href="${escapeHtml(link)}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación (copia)</a>
+        `;
+        showResult('gemini');
+    } catch (error) {
+        console.error('Error:', error);
+        showError('gemini', error.message);
+    } finally {
+        setButtonState('btn-parse-fill', false);
+    }
+}
+
+function escapeHtml(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ========================================================================
 // FUNCIÓN 5: GENERAR DESDE SPEC
 // ========================================================================
 

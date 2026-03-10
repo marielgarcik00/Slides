@@ -1,6 +1,6 @@
 """ Este archivo crea un servidor FastAPI que expone las funciones principales como endpoints HTTP. """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form  # File para parse-and-fill/upload
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,12 @@ from docx import Document
 
 # Importa el módulo con las funciones principales
 from slides_automation import GoogleSlidesAutomation
+from gemini_parser import (
+    parse_text_with_gemini,
+    parse_text_with_gemini_for_placeholders,
+    DEFAULT_SLIDE_INDEX,
+)
+
 # Carga variables de entorno desde .env
 load_dotenv()
 # Configurar logging
@@ -132,6 +138,17 @@ class BuildFromSpecRequest(BaseModel):
     new_name: str = None
     spec: Dict  # ej. {"slide_1": {"type": "cover", "content": {"title": "..."}}, ...}
 
+# Solicitud para parsear texto con Gemini y rellenar slide (sobre una copia)
+class ParseAndFillRequest(BaseModel):
+    presentation_url: str  
+    folder_url_or_id: str  
+    new_name: str = None   
+    text: str = ""
+
+# Solo texto, para probar Gemini sin tocar Slides
+class ParseTextRequest(BaseModel):
+    text: str
+
 #Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
     success: bool
@@ -171,6 +188,9 @@ async def root():
             "extract_ids": "POST /api/extract-slide-ids",
             "get_components": "POST /api/get-slide-components",
             "build_from_spec": "POST /api/build-from-spec",
+            "parse_text": "POST /api/parse-text (solo Gemini, para probar)",
+            "parse_and_fill": "POST /api/parse-and-fill",
+            "parse_and_fill_upload": "POST /api/parse-and-fill/upload",
             "health": "GET /api/health"
         }
     }
@@ -388,6 +408,127 @@ async def verify_access(request: ExtractSlideIdsRequest):
     except Exception as e:
         handle_api_error("verificando acceso", e)
 
+# Solo prueba Gemini: parsea el texto y devuelve título + descripción. Para verificar que GEMINI_API_KEY funciona
+@app.post("/api/parse-text", tags=["Gemini"])
+async def parse_text_only(request: ParseTextRequest):
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("Se requiere el campo 'text'.")
+        parsed = parse_text_with_gemini(text)
+        return {
+            "success": True,
+            "message": "Texto parseado (solo Gemini, sin modificar presentación)",
+            "parsed": parsed,
+        }
+    except Exception as e:
+        handle_api_error("parseando texto con Gemini", e)
+
+# Crea una copia en la carpeta indicada, lee los # de la slide 0 de esa copia, Gemini completa cada placeholder, y se rellena solo la copia
+@app.post("/api/parse-and-fill", tags=["Slides", "Gemini"])
+async def parse_and_fill(request: ParseAndFillRequest):
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("Se requiere el campo 'text' con contenido para parsear.")
+        if not (request.folder_url_or_id or request.folder_url_or_id.strip()):
+            raise ValueError("Se requiere 'folder_url_or_id' para crear la copia. La plantilla original NUNCA se modifica.")
+
+        automation = create_automation(validate_credentials())
+        # Crear copia (la plantilla no se toca)
+        copy_id = automation.copy_presentation_to_folder(
+            request.presentation_url,
+            request.folder_url_or_id.strip(),
+            request.new_name or None,
+        )
+        copy_url = f"https://docs.google.com/presentation/d/{copy_id}/edit"
+
+        # Leer placeholders de la slide 0 de la COPIA (misma estructura que la plantilla)
+        components = automation.get_slide_components(copy_url, DEFAULT_SLIDE_INDEX)
+        if not components:
+            raise ValueError(
+                "En la slide 0 de la plantilla no hay ningún marcador #. "
+                "La plantilla debe tener placeholders (ej. #titulo, #descripcion) en la primera slide."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+        parsed = parse_text_with_gemini_for_placeholders(text, placeholders)
+
+        # Rellenar la copia
+        result = automation.replace_components_in_slide_by_index(
+            presentation_url=copy_url,
+            slide_index=DEFAULT_SLIDE_INDEX,
+            replacements=parsed,
+        )
+        return {
+            "success": True,
+            "message": "Se creó una copia, Gemini completó los placeholders. La plantilla original no fue modificada.",
+            "parsed": parsed,
+            "placeholders": placeholders,
+            "slide_index": DEFAULT_SLIDE_INDEX,
+            "presentation_id": copy_id,
+            "new_presentation_url": copy_url,
+            "replaced": result["replaced"],
+        }
+    except Exception as e:
+        handle_api_error("parseando y rellenando slide", e)
+
+# Igual que parse-and-fill pero con archivo (PDF/DOCX)
+@app.post("/api/parse-and-fill/upload", tags=["Slides", "Gemini"])
+async def parse_and_fill_upload(
+    presentation_url: str = Form(...),
+    folder_url_or_id: str = Form(...),
+    new_name: str = Form(""),
+    file: UploadFile = File(None),
+    text: str = Form(""),
+):
+    try:
+        raw_text = (text or "").strip()
+        if file and file.filename:
+            content = await file.read()
+            if file.filename.lower().endswith(".pdf"):
+                raw_text = _extract_text_from_pdf(content)
+            elif file.filename.lower().endswith(".docx"):
+                raw_text = _extract_text_from_docx(content)
+            else:
+                raw_text = content.decode("utf-8", errors="replace")
+        if not raw_text or not raw_text.strip():
+            raise ValueError("Se requiere texto o un archivo PDF/DOCX con contenido.")
+        if not (folder_url_or_id or folder_url_or_id.strip()):
+            raise ValueError("Se requiere 'folder_url_or_id'. La plantilla original NUNCA se modifica.")
+
+        automation = create_automation(validate_credentials())
+        copy_id = automation.copy_presentation_to_folder(
+            presentation_url,
+            folder_url_or_id.strip(),
+            new_name.strip() or None,
+        )
+        copy_url = f"https://docs.google.com/presentation/d/{copy_id}/edit"
+
+        components = automation.get_slide_components(copy_url, DEFAULT_SLIDE_INDEX)
+        if not components:
+            raise ValueError(
+                "En la slide 0 no hay ningún marcador #. La plantilla debe tener placeholders (ej. #titulo, #descripcion)."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+        parsed = parse_text_with_gemini_for_placeholders(raw_text, placeholders)
+
+        result = automation.replace_components_in_slide_by_index(
+            presentation_url=copy_url,
+            slide_index=DEFAULT_SLIDE_INDEX,
+            replacements=parsed,
+        )
+        return {
+            "success": True,
+            "message": "Se creó una copia y Gemini completó los placeholders.",
+            "parsed": parsed,
+            "placeholders": placeholders,
+            "slide_index": DEFAULT_SLIDE_INDEX,
+            "presentation_id": copy_id,
+            "new_presentation_url": copy_url,
+            "replaced": result["replaced"],
+        }
+    except Exception as e:
+        handle_api_error("parseando y rellenando desde archivo", e)
 
 
 if __name__ == "__main__":

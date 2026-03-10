@@ -2,7 +2,7 @@
 import re  # Librería para buscar patrones de texto como # y $
 import json
 import uuid
-from typing import Any, List, Dict, Set, cast  # Define tipos de datos para listas y diccionarios
+from typing import Any, List, Dict, Set, Optional, cast  # Define tipos de datos para listas y diccionarios
 from google.oauth2 import service_account  # Gestiona la key de la Service Account
 from googleapiclient.discovery import build  # Crea la conexión con la API de Google
 from googleapiclient.errors import HttpError  # Manejo de errores de la API
@@ -356,6 +356,72 @@ class GoogleSlidesAutomation:
             'slide_identifier': ", ".join(normalized_ids),
             'replaced': applied,
             'slide_index': target_index
+        }
+
+    # Rellena componentes (#) en una slide por índice y elimina los $ para usar con gemini 
+    def replace_components_in_slide_by_index(
+        self,
+        presentation_url: str,
+        slide_index: int,
+        replacements: Dict[str, str],
+        remove_identifiers: bool = True,
+    ) -> Dict[str, Any]:
+        presentation_id = self._extract_presentation_id(presentation_url)
+        presentation = self.service.presentations().get(presentationId=presentation_id).execute()
+        slides = presentation.get('slides', [])
+        if slide_index < 0 or slide_index >= len(slides):
+            raise ValueError(
+                f"slide_index {slide_index} fuera de rango (0-{len(slides) - 1})."
+            )
+        slide = slides[slide_index]
+        slide_id = slide['objectId']
+        target_slide_components = {m.lower() for m in self._find_all_components_in_slide(slide, '#')}
+        target_slide_identifiers = self._find_all_components_in_slide(slide, '$')
+
+        normalized_replacements, semantic = self._normalize_replacements(replacements)
+        replacement_requests, applied = self._build_component_requests(
+            slide_id,
+            target_slide_components,
+            normalized_replacements,
+            semantic,
+        )
+        if not replacement_requests:
+            if not target_slide_components:
+                raise ValueError(
+                    f"En la slide {slide_index} no hay ningún marcador #. "
+                    "Agregá en la primera slide cuadros de texto que contengan exactamente "
+                    "#titulo (o #title) y #descripcion (o #description) para que se rellenen con el resultado de Gemini."
+                )
+            raise ValueError(
+                f"En la slide {slide_index} hay marcadores # ({', '.join(sorted(target_slide_components))}) "
+                "pero no se pudo asignar título/descripción. Asegurate de tener #titulo/#title y #descripcion/#description."
+            )
+
+        # Si remove_identifiers es verdadero, agrega instrucciones para borrar las etiquetas de contexto ($)
+        requests: List[Dict] = list(replacement_requests)
+        if remove_identifiers and target_slide_identifiers:
+            cleanup_requests = self._build_identifier_cleanup_requests(
+                slide_id, target_slide_identifiers
+            )
+            requests.extend(cleanup_requests)
+
+        # Envía todas las órdenes juntas a Google en un solo paquete (batchUpdate)
+        self.service.presentations().batchUpdate(
+            presentationId=presentation_id,
+            body={'requests': requests}
+        ).execute()
+
+
+        logger.info(
+            "✓ Reemplazados %s componentes en slide índice %s%s",
+            len(replacement_requests),
+            slide_index,
+            " y eliminados $" if remove_identifiers and target_slide_identifiers else "",
+        )
+        return {
+            'presentation_id': presentation_id,
+            'slide_index': slide_index,
+            'replaced': applied,
         }
 
     # Asegura formato $ident y limpieza básica de los IDs de slide

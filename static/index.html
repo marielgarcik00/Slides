@@ -15,7 +15,10 @@
             <div class="header-content">
                 <h1>🚀 Google Slides Automation</h1>
                 <p class="subtitle">Extrae identificadores y componentes dinámicos de tus presentaciones</p>
-                <p style="margin-top:8px; font-size:0.9rem;"><a href="#section-5" class="quick-link">↓ Ir al punto 5: Generar desde spec</a></p>
+                <p style="margin-top:8px; font-size:0.9rem;">
+                    <a href="#section-gemini" class="quick-link">🤖 Probar Gemini</a> ·
+                    <a href="#section-5" class="quick-link">↓ Punto 5: Generar desde spec</a>
+                </p>
             </div>
         </header>
 
@@ -231,6 +234,58 @@
                 </div>
             </section>
 
+            <!-- SECCIÓN: PROBAR GEMINI -->
+            <section id="section-gemini" class="feature-card">
+                <div class="card-header">
+                    <h2>🤖 Probar Gemini (parsear texto y rellenar slide)</h2>
+                    <p class="description">Envía texto a la API de Gemini. Podés solo ver un parseo título/descripción, o <strong>rellenar la slide 0</strong>: la app lee los marcadores <code>#</code> que tenga esa slide (ej. <code>#titulo</code>, <code>#descripcion</code>, <code>#fecha</code>, <code>#autor</code>) y Gemini interpreta el texto para completar cada uno.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="gemini-text">Texto a parsear:</label>
+                    <textarea id="gemini-text" rows="4" class="input-field" placeholder="Ej: Reunión de lanzamiento. Hoy presentamos el nuevo producto X con todas sus características y fechas de entrega."></textarea>
+
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:12px;">
+                        <button id="btn-parse-text" class="btn btn-secondary" onclick="parseTextOnly()">
+                            🔍 Solo parsear (probar Gemini)
+                        </button>
+                    </div>
+
+                    <div style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+                        <p class="description" style="font-size:0.9rem; background:#f0f7ff; padding:10px; border-radius:6px; margin-bottom:12px;">
+                            <strong>La plantilla NUNCA se modifica.</strong> Siempre se crea una copia en la carpeta que indiques y se rellena solo esa copia.
+                        </p>
+                        <label for="gemini-url">URL de la plantilla (solo se copia; no se edita):</label>
+                        <input type="text" id="gemini-url" placeholder="https://docs.google.com/presentation/d/..." class="input-field">
+                        <label for="gemini-folder">Carpeta de Drive donde crear la copia (URL o ID) <span style="color:#c00;">*</span>:</label>
+                        <input type="text" id="gemini-folder" placeholder="https://drive.google.com/drive/folders/..." class="input-field">
+                        <label for="gemini-name">Nombre de la copia (opcional):</label>
+                        <input type="text" id="gemini-name" placeholder="Ej: Presentación Fravega - 9 mar" class="input-field">
+                        <p class="description" style="margin-top:6px; font-size:0.85rem; color:#666;">
+                            La plantilla debe tener en la <strong>primera slide</strong> placeholders como <code>#titulo</code>, <code>#descripcion</code>, <code>#fecha</code>. Gemini completa cada uno según tu texto.
+                        </p>
+                        <button id="btn-parse-fill" class="btn btn-primary" onclick="parseAndFill()" style="margin-top:8px;">
+                            ✏️ Crear copia y rellenar slide 0
+                        </button>
+                    </div>
+                </div>
+
+                <div id="result-gemini" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Resultado</div>
+                    <div id="output-gemini" class="output-text"></div>
+                </div>
+
+                <div id="error-gemini" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">✗ Error</div>
+                    <div id="error-text-gemini" class="error-text"></div>
+                </div>
+
+                <div id="loading-gemini" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Procesando...</p>
+                </div>
+            </section>
+
             <!-- SECCIÓN 5: GENERAR DESDE SPEC -->
             <section id="section-5" class="feature-card">
                 <div class="card-header">
@@ -322,7 +377,7 @@
     </div>
 
     <!-- SCRIPT -->
-    <script src="/static/script.js?v=12"></script>
+    <script src="/static/script.js?v=13"></script>
 </body>
 
 </html>

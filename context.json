@@ -1,0 +1,47 @@
+{
+    "slides_context": {
+      "$cover_presentation": {
+        "finalidad": "Presentación general del tema, título principal y footer corporativo.",
+        "marcadores": {
+          "#main_title": "Nombre del proyecto o título central.",
+          "#footer_context": "Información de la compañía o avisos legales."
+        }
+      },
+      "$chapter_cover": {
+        "finalidad": "Numeración de secciones en orden lógico y título de sección.",
+        "marcadores": {
+          "#chapter_number": "Número del capítulo actual (ej: 01, Capítulo 1).",
+          "#section_title": "Nombre de la sección o tema a tratar."
+        }
+      },
+      "$descriptive_presentation": {
+        "finalidad": "Desarrollo de un concepto único con título y descripción clara.",
+        "marcadores": {
+          "#main_title": "Título corto que resume el tópico.",
+          "#description": "Párrafo descriptivo con la idea principal."
+        }
+      },
+      "$three_items_list": {
+        "finalidad": "Organización de información en tres puntos clave numerados por importancia.",
+        "marcadores": {
+          "#item_1_title": "Título del primer punto clave.",
+          "#item_1_description": "Explicación breve del primer punto.",
+          "#item_2_title": "Título del segundo punto clave.",
+          "#item_2_description": "Explicación breve del segundo punto.",
+          "#item_3_title": "Título del tercer punto clave.",
+          "#item_3_description": "Explicación breve del tercer punto."
+        }
+      },
+      "$comparative_two_differences": {
+        "finalidad": "Comparación entre dos temas resaltando sus diferencias principales.",
+        "marcadores": {
+          "#main_title": "Título que explica la comparación general.",
+          "#column_1_title": "Encabezado de la primera columna.",
+          "#column_1_description": "Contenido detallado del primer tema.",
+          "#column_2_title": "Encabezado de la segunda columna.",
+          "#column_2_description": "Contenido detallado del segundo tema."
+        }
+      }
+    }
+  }
+  

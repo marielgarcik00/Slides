@@ -1,6 +1,6 @@
 """ Este archivo crea un servidor FastAPI que expone las funciones principales como endpoints HTTP. """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form  # File para parse-and-fill/upload
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,15 +17,73 @@ from docx import Document
 
 # Importa el módulo con las funciones principales
 from slides_automation import GoogleSlidesAutomation
+from gemini_parser import ask_gemini, ask_gemini_title_and_subtitles, ask_gemini_for_slide, DEFAULT_SLIDE_INDEX
+
 # Carga variables de entorno desde .env
 load_dotenv()
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Ruta base del proyecto (carpeta donde está app.py)
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# Contexto de slides (context.json) para enriquecer el prompt de Gemini
+CONTEXT_PATH = os.path.join(PROJECT_ROOT, "context.json")
+
+
+def _load_context_json() -> dict:
+    """Carga context.json completo."""
+    if not os.path.exists(CONTEXT_PATH):
+        return {}
+    try:
+        with open(CONTEXT_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _load_slide_context_for_identifiers(identifiers: List[str]):
+    """Carga context.json y devuelve finalidad + marcadores para el primer $ que exista en el contexto."""
+    if not identifiers:
+        return None
+    data = _load_context_json()
+    slides_context = data.get("slides_context") or {}
+    for ident in identifiers:
+        key = ident if ident.startswith("$") else f"${ident}"
+        if key in slides_context:
+            return slides_context[key]
+        if ident.lower() in {k.lower().lstrip("$") for k in slides_context}:
+            for k in slides_context:
+                if k.lower().lstrip("$") == ident.lower():
+                    return slides_context[k]
+    return None
+
+
+def get_slide_context_by_placeholders(placeholders: List[str]):
+    """
+    Dada la lista de placeholders de una slide (ej. main_title, column_1_title, ...),
+    devuelve el template de context.json cuyos marcadores coinciden exactamente.
+    placeholders puede venir con o sin # (se normaliza a sin # y lower).
+    """
+    data = _load_context_json()
+    slides_context = data.get("slides_context") or {}
+    want = {p.lstrip("#").lower() for p in placeholders if (p or "").strip()}
+    if not want:
+        return None
+    for _key, template in slides_context.items():
+        marcadores = template.get("marcadores") or {}
+        have = {k.lstrip("#").lower() for k in marcadores}
+        if have == want:
+            return template
+    return None
+
 #Obtiene la ruta del archivo de credenciales
 def get_credentials_path() -> str:
-    return os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
+    path = os.getenv('GOOGLE_CREDENTIALS_PATH', './credentials.json')
+    if not os.path.isabs(path):
+        path = os.path.normpath(os.path.join(PROJECT_ROOT, path))
+    return path
 
 #Valida que exista el archivo de credenciales y lo devuelve
 def validate_credentials() -> str:
@@ -119,6 +177,40 @@ class CustomCopyRequest(BaseModel):
     slide_counts: Dict[int, int] = None
     slide_sequence: List[int] = None
 
+# Solicitud para generar presentación desde especificación (slide_n → type $, content #)
+class BuildFromSpecRequest(BaseModel):
+    presentation_url: str
+    folder_url_or_id: str
+    new_name: str = None
+    spec: Dict  # ej. {"slide_1": {"type": "cover", "content": {"title": "..."}}, ...}
+
+# Solicitud para parsear texto con Gemini y rellenar slide (sobre una copia)
+# Si se envía parsed_replacements (JSON ya generado), se usa ese y no se llama a Gemini
+class ParseAndFillRequest(BaseModel):
+    presentation_url: str
+    folder_url_or_id: str
+    new_name: str = None
+    text: str = ""
+    slide_index: int = 0
+    parsed_replacements: Dict = None  # Opcional: si viene del "Solo parsear", reutilizamos y no llamamos a Gemini
+
+# Solo texto; opcionalmente URL + slide_index para ver el JSON que generaría Gemini para esa slide
+class ParseTextRequest(BaseModel):
+    text: str
+    presentation_url: str = None
+    slide_index: int = 0
+
+# Probar solo la IA: mandar texto y que devuelva lo que entiende
+class AskGeminiRequest(BaseModel):
+    text: str
+
+
+# Ponelo en la slide N: texto + URL + índice → JSON con placeholders de esa slide
+class AskGeminiForSlideRequest(BaseModel):
+    text: str
+    presentation_url: str
+    slide_index: int = 0
+
 #Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
     success: bool
@@ -157,9 +249,104 @@ async def root():
         "endpoints": {
             "extract_ids": "POST /api/extract-slide-ids",
             "get_components": "POST /api/get-slide-components",
+            "build_from_spec": "POST /api/build-from-spec",
+            "parse_text": "POST /api/parse-text (solo Gemini, para probar)",
+            "parse_and_fill": "POST /api/parse-and-fill",
+            "parse_and_fill_upload": "POST /api/parse-and-fill/upload",
             "health": "GET /api/health"
         }
     }
+
+@app.post("/api/ask-gemini", tags=["Gemini"])
+async def ask_gemini_endpoint(request: AskGeminiRequest):
+    """Envía texto a la IA y devuelve solo lo que interpreta (texto en bruto)."""
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("El texto no puede estar vacío.")
+        response = ask_gemini(text)
+        return {"success": True, "response": response or "(La IA no devolvió texto)"}
+    except Exception as e:
+        err = str(e).upper()
+        if "429" in err or "RESOURCE_EXHAUSTED" in err or "QUOTA" in err:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Límite de uso de la API alcanzado. "
+                    "Esperá ~1 minuto y probá de nuevo, o creá otra API key en https://aistudio.google.com/apikey (cada key tiene su propia cuota). "
+                    "Cuotas: https://ai.google.dev/gemini-api/docs/rate-limits"
+                ),
+            )
+        handle_api_error("ask-gemini", e)
+
+
+@app.post("/api/ask-gemini-structure", tags=["Gemini"])
+async def ask_gemini_structure_endpoint(request: AskGeminiRequest):
+    """Devuelve título, 2 subtítulos y descripciones a partir del texto."""
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("El texto no puede estar vacío.")
+        structured = ask_gemini_title_and_subtitles(text)
+        return {"success": True, "structured": structured}
+    except Exception as e:
+        err = str(e).upper()
+        if "429" in err or "RESOURCE_EXHAUSTED" in err or "QUOTA" in err:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Límite de uso de la API alcanzado. "
+                    "Esperá ~1 minuto y probá de nuevo, o creá otra API key en https://aistudio.google.com/apikey (cada key tiene su propia cuota). "
+                    "Cuotas: https://ai.google.dev/gemini-api/docs/rate-limits"
+                ),
+            )
+        handle_api_error("ask-gemini-structure", e)
+
+
+@app.post("/api/ask-gemini-for-slide", tags=["Gemini"])
+async def ask_gemini_for_slide_endpoint(request: AskGeminiForSlideRequest):
+    """
+    Obtiene los placeholders de la slide indicada, busca el template en context.json
+    y devuelve el JSON que Gemini genera para rellenar esa slide con el texto dado.
+    """
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("El texto no puede estar vacío.")
+        url = (request.presentation_url or "").strip()
+        if not url or "docs.google.com/presentation" not in url or "/d/" not in url:
+            raise ValueError("Se necesita la URL de la presentación (Google Slides) para saber qué placeholders tiene la slide.")
+        slide_index = request.slide_index if request.slide_index >= 0 else 0
+        automation = create_automation(validate_credentials())
+        components = automation.get_slide_components(url, slide_index)
+        if not components:
+            raise ValueError(
+                f"En la slide {slide_index} no hay ningún marcador #. "
+                "Agregá placeholders (ej. #main_title, #description) en esa slide."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+        context_template = get_slide_context_by_placeholders(placeholders)
+        structured = ask_gemini_for_slide(text, placeholders, context_template)
+        return {
+            "success": True,
+            "slide_index": slide_index,
+            "placeholders": placeholders,
+            "template_matched": context_template is not None,
+            "structured": structured,
+        }
+    except Exception as e:
+        err = str(e).upper()
+        if "429" in err or "RESOURCE_EXHAUSTED" in err or "QUOTA" in err:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Límite de uso de la API alcanzado. "
+                    "Esperá ~1 minuto y probá de nuevo, o creá otra API key en https://aistudio.google.com/apikey. "
+                    "Cuotas: https://ai.google.dev/gemini-api/docs/rate-limits"
+                ),
+            )
+        handle_api_error("ask-gemini-for-slide", e)
+
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
 #Verificar estado del servicio y archivo de credenciales
@@ -323,6 +510,42 @@ async def fill_from_json(
         handle_api_error("rellenando presentación con JSON", e)
 
 
+@app.post("/api/build-from-spec", tags=["Slides"])
+# Genera una presentación: URL plantilla + carpeta destino + JSON spec (slide_n → type $, content #)
+async def build_from_spec(request: BuildFromSpecRequest):
+    """
+    Crea una presentación a partir de una plantilla, carpeta de destino y un JSON de especificación.
+
+    - **presentation_url**: URL de la presentación plantilla (con slides identificadas con $).
+    - **folder_url_or_id**: URL o ID de la carpeta de Drive donde guardar la copia.
+    - **spec**: JSON con claves slide_1, slide_2, ... slide_n. Cada valor tiene:
+      - **type**: identificador de la diapo plantilla (ej. "cover", "chapter") → busca la slide con $cover, $chapter.
+      - **content**: dict de reemplazos para los marcadores # (ej. {"title": "Título", "description": "..."}).
+    - **new_name**: nombre opcional de la nueva presentación.
+
+    Las diapos se ordenan según slide_1, slide_2, ... y se rellenan con su content.
+    """
+    try:
+        automation = create_automation(validate_credentials())
+        result = automation.build_presentation_from_spec(
+            presentation_url=request.presentation_url,
+            folder_url_or_id=request.folder_url_or_id,
+            spec=request.spec,
+            new_name=request.new_name,
+            remove_identifiers=True
+        )
+        return {
+            "success": True,
+            "message": "Presentación generada desde especificación",
+            "new_presentation_id": result["presentation_id"],
+            "new_presentation_url": result["presentation_url"],
+            "slides_count": result["slides_count"],
+            "slide_sequence": result["slide_sequence"],
+        }
+    except Exception as e:
+        handle_api_error("generando presentación desde spec", e)
+
+
 @app.post("/api/verify-access", tags=["Slides"])
 # Verifica si el Service Account tiene acceso a una presentación
 async def verify_access(request: ExtractSlideIdsRequest):
@@ -338,6 +561,153 @@ async def verify_access(request: ExtractSlideIdsRequest):
     except Exception as e:
         handle_api_error("verificando acceso", e)
 
+# Prueba Gemini: requiere URL de plantilla + índice de slide. Devuelve el prompt que se mandó a Gemini y el JSON que devolvió.
+@app.post("/api/parse-text", tags=["Gemini"])
+async def parse_text_only(request: ParseTextRequest):
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("Se requiere el campo 'text'.")
+        url = (request.presentation_url or "").strip()
+        slide_index = request.slide_index if request.slide_index >= 0 else 0
+        if not url or "docs.google.com/presentation" not in url or "/d/" not in url:
+            raise ValueError("Para probar el parseo con placeholders se necesita URL de la plantilla (Google Slides) e índice de la slide.")
+
+        automation = create_automation(validate_credentials())
+        components = automation.get_slide_components(url, slide_index)
+        if not components:
+            raise ValueError(
+                f"En la slide {slide_index} no hay ningún marcador #. Elegí otra slide."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+        slide_ids = automation.extract_slide_ids(url)
+        identifiers = slide_ids.get(slide_index, []) or []
+        slide_context = _load_slide_context_for_identifiers(identifiers)
+        response_raw = ask_gemini(text) if text else ""
+        parsed = {p: "" for p in placeholders}
+        return {
+            "success": True,
+            "message": f"Respuesta de Gemini (slide {slide_index}). Por ahora solo se muestra lo que entiende; no hay segmentación a placeholders.",
+            "slide_index": slide_index,
+            "placeholders": placeholders,
+            "prompt_sent": "",
+            "response_raw": response_raw,
+            "parsed": parsed,
+        }
+    except Exception as e:
+        handle_api_error("parseando texto con Gemini", e)
+
+# Crea una copia en la carpeta indicada y rellena la slide. Si viene parsed_replacements (del "Solo parsear"), reutiliza ese JSON y no llama a Gemini.
+@app.post("/api/parse-and-fill", tags=["Slides", "Gemini"])
+async def parse_and_fill(request: ParseAndFillRequest):
+    try:
+        if not (request.folder_url_or_id or request.folder_url_or_id.strip()):
+            raise ValueError("Se requiere 'folder_url_or_id' para crear la copia. La plantilla original NUNCA se modifica.")
+
+        automation = create_automation(validate_credentials())
+        copy_id = automation.copy_presentation_to_folder(
+            request.presentation_url,
+            request.folder_url_or_id.strip(),
+            request.new_name or None,
+        )
+        copy_url = f"https://docs.google.com/presentation/d/{copy_id}/edit"
+        slide_index = request.slide_index if request.slide_index >= 0 else 0
+
+        components = automation.get_slide_components(copy_url, slide_index)
+        if not components:
+            raise ValueError(
+                f"En la slide {slide_index} no hay ningún marcador #. "
+                "Elegí otra slide o agregá placeholders (ej. #titulo, #descripcion) en esa slide."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+
+        # Solo rellenamos si nos pasan el JSON (parsed_replacements). No hay segmentación automática.
+        if request.parsed_replacements and isinstance(request.parsed_replacements, dict) and len(request.parsed_replacements) > 0:
+            parsed = request.parsed_replacements
+        else:
+            raise ValueError("Se requiere 'parsed_replacements' (JSON con claves/valores para cada placeholder). La segmentación desde texto no está disponible.")
+
+        result = automation.replace_components_in_slide_by_index(
+            presentation_url=copy_url,
+            slide_index=slide_index,
+            replacements=parsed,
+        )
+        return {
+            "success": True,
+            "message": "Se creó una copia y se rellenaron los placeholders. La plantilla original no fue modificada.",
+            "parsed": parsed,
+            "placeholders": placeholders,
+            "slide_index": slide_index,
+            "presentation_id": copy_id,
+            "new_presentation_url": copy_url,
+            "replaced": result["replaced"],
+        }
+    except Exception as e:
+        handle_api_error("parseando y rellenando slide", e)
+
+# Igual que parse-and-fill pero con archivo (PDF/DOCX)
+@app.post("/api/parse-and-fill/upload", tags=["Slides", "Gemini"])
+async def parse_and_fill_upload(
+    presentation_url: str = Form(...),
+    folder_url_or_id: str = Form(...),
+    new_name: str = Form(""),
+    slide_index: int = Form(0),
+    file: UploadFile = File(None),
+    text: str = Form(""),
+):
+    try:
+        raw_text = (text or "").strip()
+        if file and file.filename:
+            content = await file.read()
+            if file.filename.lower().endswith(".pdf"):
+                raw_text = _extract_text_from_pdf(content)
+            elif file.filename.lower().endswith(".docx"):
+                raw_text = _extract_text_from_docx(content)
+            else:
+                raw_text = content.decode("utf-8", errors="replace")
+        if not raw_text or not raw_text.strip():
+            raise ValueError("Se requiere texto o un archivo PDF/DOCX con contenido.")
+        if not (folder_url_or_id or folder_url_or_id.strip()):
+            raise ValueError("Se requiere 'folder_url_or_id'. La plantilla original NUNCA se modifica.")
+
+        automation = create_automation(validate_credentials())
+        copy_id = automation.copy_presentation_to_folder(
+            presentation_url,
+            folder_url_or_id.strip(),
+            new_name.strip() or None,
+        )
+        copy_url = f"https://docs.google.com/presentation/d/{copy_id}/edit"
+
+        idx = slide_index if slide_index >= 0 else 0
+        slide_ids = automation.extract_slide_ids(copy_url)
+        identifiers = slide_ids.get(idx, []) or []
+        slide_context = _load_slide_context_for_identifiers(identifiers)
+
+        components = automation.get_slide_components(copy_url, idx)
+        if not components:
+            raise ValueError(
+                f"En la slide {idx} no hay ningún marcador #. Elegí otra slide o agregá placeholders."
+            )
+        placeholders = [c.lstrip("#").lower() for c in components]
+        parsed = {p: "" for p in placeholders}
+
+        result = automation.replace_components_in_slide_by_index(
+            presentation_url=copy_url,
+            slide_index=idx,
+            replacements=parsed,
+        )
+        return {
+            "success": True,
+            "message": "Se creó una copia y Gemini completó los placeholders.",
+            "parsed": parsed,
+            "placeholders": placeholders,
+            "slide_index": idx,
+            "presentation_id": copy_id,
+            "new_presentation_url": copy_url,
+            "replaced": result["replaced"],
+        }
+    except Exception as e:
+        handle_api_error("parseando y rellenando desde archivo", e)
 
 
 if __name__ == "__main__":

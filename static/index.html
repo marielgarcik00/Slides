@@ -16,7 +16,8 @@
                 <h1>🚀 Google Slides Automation</h1>
                 <p class="subtitle">Extrae identificadores y componentes dinámicos de tus presentaciones</p>
                 <p style="margin-top:8px; font-size:0.9rem;">
-                    <a href="#section-gemini" class="quick-link">🤖 Probar Gemini</a> ·
+                    <a href="#section-ask-gemini" class="quick-link">🤖 Probar solo la IA</a> ·
+                    <a href="#section-gemini" class="quick-link">Parsear y rellenar slide</a> ·
                     <a href="#section-5" class="quick-link">↓ Punto 5: Generar desde spec</a>
                 </p>
             </div>
@@ -24,6 +25,49 @@
 
         <!-- MAIN CONTENT -->
         <main class="main-content">
+            <!-- PROBAR SOLO LA IA (Gemini) -->
+            <section id="section-ask-gemini" class="feature-card">
+                <div class="card-header">
+                    <h2>🤖 Probar solo la IA</h2>
+                    <p class="description">Enviá el texto a Gemini para ver qué interpreta; «Estructurar texto» devuelve el JSON del slide comparativo. Con URL e índice, «Ponelo en la slide» usa los placeholders de esa slide y devuelve el JSON según context.json.</p>
+                </div>
+                <div class="form-group">
+                    <label for="ask-gemini-text">Texto:</label>
+                    <textarea id="ask-gemini-text" rows="5" class="input-field" placeholder="Ej: Bebidas energeticas&#10;Monster: es una bebida que se toma en lata.&#10;Red bull: es otra bebida en lata."></textarea>
+                    <button id="btn-ask-gemini" class="btn btn-primary" onclick="askGeminiOnly()" style="margin-top:10px;">Enviar a Gemini</button>
+                </div>
+                <div id="result-ask-gemini" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Interpretación de la IA</div>
+                    <div id="output-ask-gemini" class="output-text"></div>
+                </div>
+                <div class="form-group" id="ask-gemini-structure-area" style="margin-top:16px;">
+                    <button id="btn-ask-gemini-structure" class="btn btn-secondary" onclick="askGeminiStructure()">Estructurar texto</button>
+                </div>
+                <div id="result-ask-gemini-structure" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Texto estructurado</div>
+                    <div id="output-ask-gemini-structure" class="output-text"></div>
+                </div>
+                <div class="form-group" style="margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
+                    <label for="ask-gemini-preso-url">URL de la presentación (para «Ponelo en la slide»):</label>
+                    <input type="text" id="ask-gemini-preso-url" class="input-field" placeholder="https://docs.google.com/presentation/d/...">
+                    <label for="ask-gemini-slide-index" style="margin-top:10px;">Índice de slide (0 = primera):</label>
+                    <input type="number" id="ask-gemini-slide-index" min="0" value="0" class="input-field" style="max-width:80px;">
+                    <button id="btn-ask-gemini-for-slide" class="btn btn-primary" onclick="askGeminiForSlide()" style="margin-top:10px;">Ponelo en la slide</button>
+                </div>
+                <div id="result-ask-gemini-for-slide" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ JSON para la slide</div>
+                    <div id="output-ask-gemini-for-slide" class="output-text"></div>
+                </div>
+                <div id="error-ask-gemini" class="result-container error-container" style="display:none;">
+                    <div class="result-header error">✗ Error</div>
+                    <div id="error-text-ask-gemini" class="error-text"></div>
+                </div>
+                <div id="loading-ask-gemini" class="loading" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Esperando respuesta de Gemini...</p>
+                </div>
+            </section>
+
             <!-- SECCIÓN 1: EXTRAER IDs DE SLIDES -->
             <section class="feature-card">
                 <div class="card-header">
@@ -245,6 +289,14 @@
                     <label for="gemini-text">Texto a parsear:</label>
                     <textarea id="gemini-text" rows="4" class="input-field" placeholder="Ej: Reunión de lanzamiento. Hoy presentamos el nuevo producto X con todas sus características y fechas de entrega."></textarea>
 
+                    <p class="description" style="margin-top:8px; font-size:0.85rem; color:#666;">
+                        Para ver el JSON que arma Gemini para una slide: indicá la plantilla y el índice de la diapo.
+                    </p>
+                    <label for="gemini-parse-url">URL de la plantilla (para saber qué placeholders tiene la slide):</label>
+                    <input type="text" id="gemini-parse-url" placeholder="https://docs.google.com/presentation/d/..." class="input-field">
+                    <label for="gemini-parse-slide">Índice de la diapo (0 = primera, 1 = segunda, …):</label>
+                    <input type="number" id="gemini-parse-slide" min="0" value="0" class="input-field" style="max-width:100px;">
+
                     <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:12px;">
                         <button id="btn-parse-text" class="btn btn-secondary" onclick="parseTextOnly()">
                             🔍 Solo parsear (probar Gemini)
@@ -261,11 +313,13 @@
                         <input type="text" id="gemini-folder" placeholder="https://drive.google.com/drive/folders/..." class="input-field">
                         <label for="gemini-name">Nombre de la copia (opcional):</label>
                         <input type="text" id="gemini-name" placeholder="Ej: Presentación Fravega - 9 mar" class="input-field">
+                        <label for="gemini-slide-index">Índice de la slide a rellenar (0 = primera, 1 = segunda, …):</label>
+                        <input type="number" id="gemini-slide-index" min="0" value="0" class="input-field" style="max-width:120px;">
                         <p class="description" style="margin-top:6px; font-size:0.85rem; color:#666;">
-                            La plantilla debe tener en la <strong>primera slide</strong> placeholders como <code>#titulo</code>, <code>#descripcion</code>, <code>#fecha</code>. Gemini completa cada uno según tu texto.
+                            La slide que elijas debe tener placeholders como <code>#titulo</code>, <code>#descripcion</code>, <code>#fecha</code>. Gemini completa cada uno según tu texto.
                         </p>
                         <button id="btn-parse-fill" class="btn btn-primary" onclick="parseAndFill()" style="margin-top:8px;">
-                            ✏️ Crear copia y rellenar slide 0
+                            ✏️ Crear copia y rellenar slide
                         </button>
                     </div>
                 </div>

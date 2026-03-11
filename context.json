@@ -1,4 +1,11 @@
 {
+    "prompts": {
+      "simple_parse": "Dado el siguiente texto, extrae un título breve (máximo 1 línea, para una diapositiva) y una descripción o resumen (texto corrido, adecuado para una slide). Responde ÚNICAMENTE con un JSON válido, sin markdown ni texto extra, con las claves \"title\" y \"description\". Ejemplo: {\"title\": \"Mi título\", \"description\": \"Texto de la descripción.\"}\n\nTexto:\n{text}",
+      "for_placeholders_intro": "Sos un Segmentador Quirúrgico de Datos. Tu tarea: entender qué SIGNIFICA cada clave del JSON (p. ej. main_title = título general de la slide, column_1_title = nombre del primer tema) y asignar a cada una el fragmento que CORRESPONDE por significado, NO por orden. La primera palabra del texto no va necesariamente en la primera clave: puede ser un título general (main_title) o el nombre de un ítem; hay que interpretar. REGLA: un fragmento en una clave no puede repetirse en otra. Paso 1: Identificá qué es cada clave (título general, nombre de tema, descripción de tema, etc.). Paso 2: Buscá en el texto el fragmento que corresponde a ESE significado. Paso 3: Devolvé el JSON. Títulos = máx. 3 palabras. Descripciones = solo el texto de ese ítem.",
+      "for_placeholders_footer": "CLAVES DEL JSON (cada una = UN fragmento distinto). NO rellenar en orden: cada clave tiene un SIGNIFICADO (main_title = título general, column_1_title = nombre primer tema, etc.). Asigná a cada clave el fragmento que corresponda por significado, no la primera palabra a la primera clave. REGLAS: 1) Cada clave = un fragmento diferente. 2) Si aparece 'X: texto', X va a un _title y 'texto' a su _description. 3) main_title suele ser un título/ tema general, no el primer nombre que aparezca. 4) Respuesta = solo el objeto JSON.\n\nTEXTO A SEGMENTAR:\n{text}\n\nDevolvé solo este JSON (un valor por clave, según el significado de cada una):",
+      "for_placeholders_retry": "ERROR: repetiste el mismo texto en varias claves. Recordá: cada clave tiene un SIGNIFICADO (main_title = título general, column_1_title = nombre primer tema, etc.). Asigná a cada una el fragmento que corresponda por significado, NO en orden. Rehacé: 1) Interpretá qué pide cada clave. 2) Buscá en el texto el fragmento correcto para esa clave. 3) Devolvé solo el JSON con un valor distinto por clave.",
+      "for_placeholders_lines": "Tu tarea: del texto abajo, asigná a cada clave el fragmento que CORRESPONDE por significado, NO en orden de aparición. main_title = título general de la slide (puede no ser la primera palabra). column_1_title / item_1_title = nombre del primer tema o ítem; su _description = solo la descripción de ese tema. No rellenar 'primera palabra en primera clave': hay que interpretar qué es cada clave y buscar el fragmento correcto. Cada línea de tu respuesta: clave=valor. NUNCA el mismo valor en dos claves. Ejemplo: texto 'Bebidas. Monster: es rica. Red bull: es fuerte' → main_title=Bebidas, column_1_title=Monster, column_1_description=es rica, column_2_title=Red bull, column_2_description=es fuerte (por significado, no por orden).\n\nClaves (una línea clave=valor por cada una):\n{placeholders_lines}\n\nTEXTO:\n{text}\n\nTu respuesta (solo líneas clave=valor):"
+    },
     "slides_context": {
       "$cover_presentation": {
         "finalidad": "Presentación general del tema, título principal y footer corporativo.",
@@ -16,30 +23,40 @@
       },
       "$descriptive_presentation": {
         "finalidad": "Desarrollo de un concepto único con título y descripción clara.",
+        "instrucciones": "main_title = título o tema general (pocas palabras, máx. 3–5). description = todo el desarrollo o cuerpo del texto. NO rellenar por orden: el título puede estar al INICIO o al FINAL del texto. Si al final hay una frase corta que resume el tema (ej. 'Bebidas energeticas'), esa es main_title y el resto es description. Si al inicio hay una frase corta, esa es main_title. Los bloques largos (ej. 'Monster: ... Red bull: ...') van siempre en description.",
+        "few_shot_ejemplo": "Si el texto es 'Monster: es una bebida... Red bull: es otra bebida... Bebidas energeticas' (título al final) → main_title=\"Bebidas energeticas\", description=\"Monster: es una bebida... Red bull: es otra bebida...\". Si es 'Bebidas energeticas. Monster: ... Red bull: ...' (título al inicio) → mismo resultado. La frase corta = main_title, el resto = description.",
         "marcadores": {
-          "#main_title": "Título corto que resume el tópico.",
-          "#description": "Párrafo descriptivo con la idea principal."
+          "#main_title": "Título corto que resume el tópico (puede estar al inicio o al final del texto).",
+          "#description": "Párrafo descriptivo: todo el desarrollo, bloques largos, contenido."
         }
       },
       "$three_items_list": {
-        "finalidad": "Organización de información en tres puntos clave numerados por importancia.",
+        "finalidad": "Tres puntos clave: cada uno con un título y una descripción.",
+        "instrucciones": "Cada clave tiene un SIGNIFICADO: item_1_title = nombre del primer ítem, item_1_description = descripción del primer ítem, etc. Asigná el fragmento que corresponda a ESE significado, NO rellenar en orden (la primera palabra no va necesariamente en item_1_title). Si el texto es '1. GTM: google tag manager 2 GA4: ...', interpretá: primer ítem = GTM + google tag manager, segundo = GA4 + ..., y asigná a item_1_title/item_1_description e item_2_title/item_2_description según ese significado. PROHIBIDO repetir el mismo texto en varias claves.",
+        "few_shot_ejemplo": "Entrada: 1. GTM: google tag manager. 2 GA4: Google analitics. 3 PBI: Power BI. -> Salida: item_1_title=\"GTM\", item_1_description=\"google tag manager\", item_2_title=\"GA4\", item_2_description=\"Google analitics\", item_3_title=\"PBI\", item_3_description=\"Power BI\" (por significado: ítem 1 = GTM, ítem 2 = GA4, ítem 3 = PBI).",
+        "ejemplo_incorrecto": "MAL: rellenar en orden (primera palabra en item_1_title, etc.) o poner el mismo texto en varias claves. Cada clave tiene un significado: item_N_title = nombre de ESE ítem, item_N_description = descripción de ESE ítem. Interpretar el texto y asignar por significado.",
         "marcadores": {
-          "#item_1_title": "Título del primer punto clave.",
-          "#item_1_description": "Explicación breve del primer punto.",
-          "#item_2_title": "Título del segundo punto clave.",
-          "#item_2_description": "Explicación breve del segundo punto.",
-          "#item_3_title": "Título del tercer punto clave.",
-          "#item_3_description": "Explicación breve del tercer punto."
+          "#item_1_title": "Título o nombre del primer punto.",
+          "#item_1_description": "Descripción del primer punto.",
+          "#item_2_title": "Título o nombre del segundo punto.",
+          "#item_2_description": "Descripción del segundo punto.",
+          "#item_3_title": "Título o nombre del tercer punto.",
+          "#item_3_description": "Descripción del tercer punto."
         }
       },
       "$comparative_two_differences": {
-        "finalidad": "Comparación entre dos temas resaltando sus diferencias principales.",
+        "finalidad": "Slide de comparación entre dos temas. Hay un título general (frase corta) y dos temas; cada tema tiene nombre y descripción.",
+        "instrucciones": "NO rellenar en orden. Cada clave tiene un SIGNIFICADO: main_title = título general; column_1_title = nombre del PRIMER tema, column_1_description = descripción de ese tema; column_2_title y column_2_description = segundo tema. Si recibes 'A es X, B es Y', NO devuelvas todo el texto en cada campo. Divide: main_title = tema general (o vacío), column_1_title = A, column_1_description = X, column_2_title = B, column_2_description = Y.",
+        "few_shot_ejemplo": "Entrada: Frutas. Manzana: roja. Pera: verde. -> Salida: {\"main_title\": \"Frutas\", \"column_1_title\": \"Manzana\", \"column_1_description\": \"roja\", \"column_2_title\": \"Pera\", \"column_2_description\": \"verde\"}",
+        "ejemplo_incorrecto": "MAL: poner el mismo texto largo en todas las claves. Cada clave = UN fragmento distinto.",
+        "ejemplo_segmentacion_estricta": "Si recibes 'A es X, B es Y', NO devuelvas todo en cada campo. Correcto: column_1_title = A, column_1_description = X, column_2_title = B, column_2_description = Y (y main_title = tema general si aplica).",
+        "ejemplo_correcto_monster": "Entrada: Monster: es una bebida energetica que se toma desde una lata. Red bull: es otra bebida energetica que se consume en lata. -> Salida correcta: main_title = \"Bebidas energeticas\", column_1_title = \"Monster\", column_1_description = \"es una bebida energetica que se toma desde una lata.\", column_2_title = \"Red bull\", column_2_description = \"es otra bebida energetica que se consume en lata.\"",
         "marcadores": {
-          "#main_title": "Título que explica la comparación general.",
-          "#column_1_title": "Encabezado de la primera columna.",
-          "#column_1_description": "Contenido detallado del primer tema.",
-          "#column_2_title": "Encabezado de la segunda columna.",
-          "#column_2_description": "Contenido detallado del segundo tema."
+          "#main_title": "SOLO el título general de la slide: una frase corta. No el contenido de las columnas.",
+          "#column_1_title": "SOLO el nombre del PRIMER tema (una o pocas palabras). No la descripción.",
+          "#column_1_description": "SOLO la descripción del PRIMER tema. Nada del segundo tema.",
+          "#column_2_title": "SOLO el nombre del SEGUNDO tema (una o pocas palabras). No la descripción.",
+          "#column_2_description": "SOLO la descripción del SEGUNDO tema. Nada del primer tema."
         }
       }
     }

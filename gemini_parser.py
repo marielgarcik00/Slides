@@ -48,7 +48,7 @@ CONTENT_TYPES = (
     "otro",             # otro tipo (usar content_type_note para aclarar)
 )
 
-
+# Normaliza el JSON que devuelve Gemini a la estructura esperada
 def _normalize_interpretation(parsed: Dict[str, Any]) -> Dict[str, Any]:
     """Normaliza el JSON que devuelve Gemini a la estructura esperada."""
     out = {
@@ -87,12 +87,8 @@ def _normalize_interpretation(parsed: Dict[str, Any]) -> Dict[str, Any]:
                 out["subtitles"].append({"title": item[:500], "description": ""})
     return out
 
-
+# Pide a Gemini que INTERPRETE el texto: tipo de contenido (comparación, descripción, lista de ítems, etc.), si hay título, subtítulos y descripciones. Estructura escalable.
 def ask_gemini_title_and_subtitles(text: str, model: str = None) -> Dict[str, Any]:
-    """
-    Pide a Gemini que INTERPRETE el texto: tipo de contenido (comparación, descripción,
-    lista de ítems, etc.), si hay título, subtítulos y descripciones. Estructura escalable.
-    """
     if not (text and text.strip()):
         return {"content_type": "", "content_type_note": "", "main_title": "", "has_subtitles": False, "subtitles": []}
     instruction = (
@@ -117,9 +113,8 @@ def ask_gemini_title_and_subtitles(text: str, model: str = None) -> Dict[str, An
     parsed = _parse_json_from_response(raw)
     return _normalize_interpretation(parsed)
 
-
+#Construye la instrucción para Gemini según los placeholders y el template de context.json.
 def _build_instruction_for_slide(placeholders: List[str], context_template: Optional[Dict[str, Any]]) -> str:
-    """Construye la instrucción para Gemini según los placeholders y el template de context.json."""
     if context_template:
         parts = [
             "Interpretá el siguiente texto y devolvé ÚNICAMENTE un JSON con estas claves (en español).",
@@ -144,17 +139,13 @@ def _build_instruction_for_slide(placeholders: List[str], context_template: Opti
         "No repitas el mismo texto en varias claves. Respuesta = solo el objeto JSON."
     )
 
-
+#     Dado un texto, la lista de placeholders de una slide y opcionalmente el template de context.json, pide a Gemini que devuelva un JSON con esas claves rellenadas según el significado de cada una.
 def ask_gemini_for_slide(
     text: str,
     placeholders: List[str],
     context_template: Optional[Dict[str, Any]] = None,
     model: str = None,
 ) -> Dict[str, str]:
-    """
-    Dado un texto, la lista de placeholders de una slide y opcionalmente el template de context.json,
-    pide a Gemini que devuelva un JSON con esas claves rellenadas según el significado de cada una.
-    """
     if not (text and text.strip()):
         return {p: "" for p in placeholders}
     placeholders = [p.lstrip("#").lower() for p in placeholders if (p or "").strip()]

@@ -619,6 +619,64 @@ async function askGeminiForSlide() {
     }
 }
 
+async function chooseBestSlide() {
+    const text = document.getElementById('ask-gemini-text').value.trim();
+    const urlEl = document.getElementById('ask-gemini-preso-url');
+    const url = urlEl ? urlEl.value.trim() : '';
+    if (!text) {
+        showError('ask-gemini', 'Escribí o pegá un texto.');
+        return;
+    }
+    if (!url || !url.includes('docs.google.com/presentation') || !url.includes('/d/')) {
+        showError('ask-gemini', 'Para elegir la mejor slide necesitás la URL de la presentación (Google Slides).');
+        return;
+    }
+    try {
+        document.getElementById('error-ask-gemini').style.display = 'none';
+        const resultDiv = document.getElementById('result-choose-best-slide');
+        const outDiv = document.getElementById('output-choose-best-slide');
+        resultDiv.style.display = 'block';
+        setButtonState('btn-choose-best-slide', true);
+        outDiv.innerHTML = '<p>Interpretando texto y revisando slides...</p>';
+        const data = await apiFetch('/api/choose-best-slide', { text: text, presentation_url: url });
+        const st = data.structured || {};
+        const typeLabels = { comparacion: 'Comparación', descripcion: 'Descripción', lista_items: 'Lista de ítems', portada: 'Portada', capitulo: 'Capítulo', otro: 'Otro' };
+        let html = '<p><strong>Plantilla elegida:</strong> ' + escapeHtml(data.template || '—') + '</p>';
+        html += '<p><strong>Contenido detectado:</strong> ' + escapeHtml(typeLabels[st.content_type] || st.content_type || '—');
+        if (st.has_subtitles && st.subtitles && st.subtitles.length) {
+            html += ' · ' + st.subtitles.length + ' ítem(s)';
+        }
+        html += '</p>';
+        html += '<p><strong>Mejor slide en la presentación:</strong> índice <strong>' + data.best_slide_index + '</strong>';
+        if (data.matched_template) {
+            html += ' — esta slide usa la plantilla ' + escapeHtml(data.matched_template);
+        } else {
+            html += ' — no había una slide con esa plantilla; el JSON es para la plantilla sugerida por el contenido';
+        }
+        html += '</p>';
+        if (data.json_for_template && Object.keys(data.json_for_template).length > 0) {
+            html += '<p><strong>Texto en formato JSON para esta plantilla:</strong></p>';
+            html += '<pre class="output-text" style="background:#f5f5f5; padding:12px; border-radius:6px; overflow:auto; font-size:0.85rem; margin-top:6px; white-space:pre-wrap;">' + escapeHtml(JSON.stringify(data.json_for_template, null, 2)) + '</pre>';
+        } else {
+            html += '<p style="color:#666;">No se pudo generar el JSON para la plantilla.</p>';
+        }
+        if (data.slides && data.slides.length) {
+            html += '<p style="margin-top:12px;"><strong>Slides en la presentación:</strong></p><ul style="margin-top:4px; font-size:0.9rem;">';
+            data.slides.forEach(function(s) {
+                const ids = (s.identifiers || []).join(', ') || '(sin $)';
+                html += '<li>Slide ' + s.index + ': ' + escapeHtml(ids) + '</li>';
+            });
+            html += '</ul>';
+        }
+        outDiv.innerHTML = html;
+    } catch (error) {
+        document.getElementById('result-choose-best-slide').style.display = 'none';
+        showError('ask-gemini', error.message);
+    } finally {
+        setButtonState('btn-choose-best-slide', false);
+    }
+}
+
 // GEMINI: PARSEAR TEXTO Y RELLENAR SLIDE
 // ========================================================================
 

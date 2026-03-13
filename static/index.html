@@ -29,7 +29,7 @@
             <section id="section-ask-gemini" class="feature-card">
                 <div class="card-header">
                     <h2>🤖 Probar solo la IA</h2>
-                    <p class="description">Enviá el texto a Gemini para ver qué interpreta; «Estructurar texto» devuelve el JSON del slide comparativo. Con URL e índice, «Ponelo en la slide» usa los placeholders de esa slide y devuelve el JSON según context.json.</p>
+                    <p class="description">Enviá el texto a Gemini; «Estructurar texto» clasifica el contenido (tipo, título, ítems). Con la URL de la presentación podés «Ponelo en la slide» (índice fijo) o «Elegir mejor slide» para que elija automáticamente la slide que mejor encaje (comparación 2 → comparativa, 3 ítems → slide de 3, etc.).</p>
                 </div>
                 <div class="form-group">
                     <label for="ask-gemini-text">Texto:</label>
@@ -57,6 +57,14 @@
                 <div id="result-ask-gemini-for-slide" class="result-container" style="display:none;">
                     <div class="result-header success">✓ JSON para la slide</div>
                     <div id="output-ask-gemini-for-slide" class="output-text"></div>
+                </div>
+                <div class="form-group" style="margin-top:16px;">
+                    <button id="btn-choose-best-slide" class="btn btn-primary" onclick="chooseBestSlide()">Elegir mejor slide</button>
+                    <p class="description" style="margin-top:6px; font-size:0.9rem;">Interpreta el texto, revisa las slides de la presentación y elige la mejor (ej. 2 cosas → comparativa, 3 ítems → slide de 3).</p>
+                </div>
+                <div id="result-choose-best-slide" class="result-container" style="display:none;">
+                    <div class="result-header success">✓ Mejor slide</div>
+                    <div id="output-choose-best-slide" class="output-text"></div>
                 </div>
                 <div id="error-ask-gemini" class="result-container error-container" style="display:none;">
                     <div class="result-header error">✗ Error</div>

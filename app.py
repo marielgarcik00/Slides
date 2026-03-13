@@ -31,9 +31,8 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 # Contexto de slides (context.json) para enriquecer el prompt de Gemini
 CONTEXT_PATH = os.path.join(PROJECT_ROOT, "context.json")
 
-
+# Carga context.json completo
 def _load_context_json() -> dict:
-    """Carga context.json completo."""
     if not os.path.exists(CONTEXT_PATH):
         return {}
     try:
@@ -42,9 +41,8 @@ def _load_context_json() -> dict:
     except Exception:
         return {}
 
-
+# Carga context.json y devuelve finalidad + marcadores para el primer $ que exista en el contexto.
 def _load_slide_context_for_identifiers(identifiers: List[str]):
-    """Carga context.json y devuelve finalidad + marcadores para el primer $ que exista en el contexto."""
     if not identifiers:
         return None
     data = _load_context_json()
@@ -59,13 +57,8 @@ def _load_slide_context_for_identifiers(identifiers: List[str]):
                     return slides_context[k]
     return None
 
-
+# Dada la lista de placeholders de una slide (ej. main_title, column_1_title, ...), devuelve el template de context.json cuyos marcadores coinciden exactamente. placeholders puede venir con o sin # (se normaliza a sin # y lower).
 def get_slide_context_by_placeholders(placeholders: List[str]):
-    """
-    Dada la lista de placeholders de una slide (ej. main_title, column_1_title, ...),
-    devuelve el template de context.json cuyos marcadores coinciden exactamente.
-    placeholders puede venir con o sin # (se normaliza a sin # y lower).
-    """
     data = _load_context_json()
     slides_context = data.get("slides_context") or {}
     want = {p.lstrip("#").lower() for p in placeholders if (p or "").strip()}
@@ -77,6 +70,71 @@ def get_slide_context_by_placeholders(placeholders: List[str]):
         if have == want:
             return template
     return None
+
+# A partir de la interpretación estructurada (content_type, subtitles), devuelve la lista de identificadores de plantilla ($...) preferidos en orden. Usado para elegir la mejor slide de una presentación.
+def get_preferred_templates_for_content(structured: Dict) -> List[str]:
+    content_type = (structured.get("content_type") or "").strip().lower()
+    subtitles = structured.get("subtitles") or []
+    num = len(subtitles) if isinstance(subtitles, list) else 0
+
+    if content_type == "comparacion":
+        if num == 2:
+            return ["$comparative_two_differences"]
+        if num >= 3:
+            return ["$three_items_list", "$comparative_two_differences"]
+        return ["$descriptive_presentation", "$comparative_two_differences"]
+    if content_type == "lista_items":
+        if num == 3:
+            return ["$three_items_list"]
+        if num == 2:
+            return ["$comparative_two_differences", "$three_items_list"]
+        return ["$descriptive_presentation", "$three_items_list"]
+    if content_type == "descripcion":
+        return ["$descriptive_presentation"]
+    if content_type == "portada":
+        return ["$cover_presentation"]
+    if content_type == "capitulo":
+        return ["$chapter_cover"]
+    # otro o sin tipo: por cantidad de ítems
+    if num == 2:
+        return ["$comparative_two_differences", "$descriptive_presentation"]
+    if num >= 3:
+        return ["$three_items_list", "$comparative_two_differences"]
+    return ["$descriptive_presentation", "$cover_presentation"]
+
+# Dada la lista de slides (cada una con 'index' e 'identifiers') y los templates preferidos en orden, devuelve (slide_index, matched_identifier) del primer slide que coincida. Coincidencia exacta (ej. slide con $three_items_list) o por partes (slide con $three, $list, $items cuenta como $three_items_list).
+def find_best_slide_index(slides: List[Dict], preferred_templates: List[str]) -> tuple:
+    preferred_norm = {t.lstrip("$").lower(): t for t in preferred_templates}
+    for template_key, template_id in preferred_norm.items():
+        for slide in slides:
+            ids = slide.get("identifiers") or []
+            slide_set = {(i if isinstance(i, str) else "").lstrip("$").lower() for i in ids}
+            # Coincidencia exacta: la slide tiene el identificador de la plantilla
+            if template_key in slide_set:
+                return slide.get("index", 0), template_id
+            # Coincidencia por partes: ej. $three_items_list ↔ slide con $three, $list, $items
+            parts = template_key.split("_")
+            if parts and all(p in slide_set for p in parts):
+                return slide.get("index", 0), template_id
+    return None, None
+
+# Dado un identificador de plantilla (ej. $comparative_two_differences), devuelve (template_dict, placeholders) desde context.json, o (None, []).
+def get_template_and_placeholders_by_identifier(template_id: str) -> tuple:
+    data = _load_context_json()
+    slides_context = data.get("slides_context") or {}
+    key = template_id if template_id.startswith("$") else f"${template_id}"
+    if key not in slides_context:
+        key_norm = key.lstrip("$").lower()
+        for k in slides_context:
+            if k.lstrip("$").lower() == key_norm:
+                key = k
+                break
+        else:
+            return None, []
+    template = slides_context[key]
+    marcadores = template.get("marcadores") or {}
+    placeholders = [m.lstrip("#").lower() for m in marcadores]
+    return template, placeholders
 
 #Obtiene la ruta del archivo de credenciales
 def get_credentials_path() -> str:
@@ -149,7 +207,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MODELOS DE DATOS (Pydantic)
+# MODELOS DE DATOS
 #Solicitud para extraer identificadores de slides
 class ExtractSlideIdsRequest(BaseModel):
     presentation_url: str
@@ -211,6 +269,12 @@ class AskGeminiForSlideRequest(BaseModel):
     presentation_url: str
     slide_index: int = 0
 
+
+class ChooseBestSlideRequest(BaseModel):
+    text: str
+    presentation_url: str
+
+
 #Respuesta con los identificadores de slides
 class ExtractSlideIdsResponse(BaseModel):
     success: bool
@@ -257,9 +321,9 @@ async def root():
         }
     }
 
+# Envía texto a la IA y devuelve solo lo que interpreta (texto en bruto)
 @app.post("/api/ask-gemini", tags=["Gemini"])
 async def ask_gemini_endpoint(request: AskGeminiRequest):
-    """Envía texto a la IA y devuelve solo lo que interpreta (texto en bruto)."""
     try:
         text = (request.text or "").strip()
         if not text:
@@ -279,10 +343,9 @@ async def ask_gemini_endpoint(request: AskGeminiRequest):
             )
         handle_api_error("ask-gemini", e)
 
-
+# Devuelve título, 2 subtítulos y descripciones a partir del texto
 @app.post("/api/ask-gemini-structure", tags=["Gemini"])
 async def ask_gemini_structure_endpoint(request: AskGeminiRequest):
-    """Devuelve título, 2 subtítulos y descripciones a partir del texto."""
     try:
         text = (request.text or "").strip()
         if not text:
@@ -302,13 +365,9 @@ async def ask_gemini_structure_endpoint(request: AskGeminiRequest):
             )
         handle_api_error("ask-gemini-structure", e)
 
-
+# Obtiene los placeholders de la slide indicada, busca el template en context.json y devuelve el JSON que Gemini genera para rellenar esa slide con el texto dado.
 @app.post("/api/ask-gemini-for-slide", tags=["Gemini"])
 async def ask_gemini_for_slide_endpoint(request: AskGeminiForSlideRequest):
-    """
-    Obtiene los placeholders de la slide indicada, busca el template en context.json
-    y devuelve el JSON que Gemini genera para rellenar esa slide con el texto dado.
-    """
     try:
         text = (request.text or "").strip()
         if not text:
@@ -346,6 +405,54 @@ async def ask_gemini_for_slide_endpoint(request: AskGeminiForSlideRequest):
                 ),
             )
         handle_api_error("ask-gemini-for-slide", e)
+
+# La IA interpreta el texto, busca la mejor plantilla en la presentación y devuelve qué plantilla es y el texto en formato JSON listo para esa plantilla.
+@app.post("/api/choose-best-slide", tags=["Gemini", "Slides"])
+async def choose_best_slide_endpoint(request: ChooseBestSlideRequest):
+   
+    try:
+        text = (request.text or "").strip()
+        if not text:
+            raise ValueError("El texto no puede estar vacío.")
+        url = (request.presentation_url or "").strip()
+        if not url or "docs.google.com/presentation" not in url or "/d/" not in url:
+            raise ValueError("Se necesita la URL de la presentación (Google Slides).")
+        automation = create_automation(validate_credentials())
+        structured = ask_gemini_title_and_subtitles(text)
+        slides = automation.get_presentation_slides(url)
+        preferred = get_preferred_templates_for_content(structured)
+        best_index, matched_template = find_best_slide_index(slides, preferred)
+        if best_index is None:
+            best_index = 0
+        # Plantilla para generar el JSON: la que matcheó en la presentación o la primera preferida
+        template_for_json = matched_template or (preferred[0] if preferred else None)
+        json_for_template = None
+        if template_for_json:
+            context_template, placeholders = get_template_and_placeholders_by_identifier(template_for_json)
+            if context_template and placeholders:
+                json_for_template = ask_gemini_for_slide(text, placeholders, context_template)
+        return {
+            "success": True,
+            "template": template_for_json,
+            "json_for_template": json_for_template,
+            "structured": structured,
+            "slides": [{"index": s["index"], "identifiers": s.get("identifiers", [])} for s in slides],
+            "preferred_templates": preferred,
+            "best_slide_index": best_index,
+            "matched_template": matched_template,
+        }
+    except Exception as e:
+        err = str(e).upper()
+        if "429" in err or "RESOURCE_EXHAUSTED" in err or "QUOTA" in err:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Límite de uso de la API alcanzado. "
+                    "Esperá ~1 minuto y probá de nuevo. "
+                    "Cuotas: https://ai.google.dev/gemini-api/docs/rate-limits"
+                ),
+            )
+        handle_api_error("choose-best-slide", e)
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
@@ -469,6 +576,8 @@ async def copy_custom(request: CustomCopyRequest):
 
 
 @app.post("/api/fill-from-json", tags=["Slides"])
+#  Recibe un JSON con pares clave-valor para marcadores # y llena toda la presentación.
+# Si se pasa carpeta o nombre, primero crea una copia; de lo contrario, edita la presentación indicada.
 async def fill_from_json(
     presentation_url: str = Form(...),
     folder_url_or_id: str = Form(""),
@@ -476,10 +585,6 @@ async def fill_from_json(
     data_json: str = Form(...),
     remove_identifiers: bool = Form(True)
 ):
-    """
-    Recibe un JSON con pares clave-valor para marcadores # y llena toda la presentación.
-    Si se pasa carpeta o nombre, primero crea una copia; de lo contrario, edita la presentación indicada.
-    """
     try:
         if not presentation_url or 'docs.google.com/presentation' not in presentation_url:
             raise ValueError("URL de presentación inválida.")

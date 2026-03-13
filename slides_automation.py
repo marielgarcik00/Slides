@@ -532,7 +532,7 @@ class GoogleSlidesAutomation:
             })
         return requests
 
-
+    #  Crea siempre una copia, rellena marcadores # con el JSON y elimina las slides sin coincidencias.
     def fill_and_prune_presentation_from_json(
         self,
         presentation_url: str,
@@ -542,10 +542,6 @@ class GoogleSlidesAutomation:
         remove_identifiers: bool = True,
         preserve_first_slide: bool = True
     ) -> Dict[str, Any]:
-        """
-        Crea siempre una copia, rellena marcadores # con el JSON y elimina las slides sin coincidencias.
-        No duplica slides; solo trabaja con las existentes en el template.
-        """
         target_presentation_id, slides = self._prepare_target_presentation(
             presentation_url, folder_url_or_id, new_name
         )
@@ -715,7 +711,7 @@ class GoogleSlidesAutomation:
             })
         return requests
 
-    # Rellenar toda la presentación con JSON
+    # Recorre todas las slides, reemplaza marcadores # con los valores del JSON y limpia los $.
     def fill_presentation_from_json(
         self,
         presentation_url: str,
@@ -724,10 +720,6 @@ class GoogleSlidesAutomation:
         new_name: str = None,
         remove_identifiers: bool = True
     ) -> Dict[str, Any]:
-        """
-        Recorre todas las slides, reemplaza marcadores # con los valores del JSON y limpia los $.
-        Si se pasa new_name o folder_url_or_id, primero crea una copia; de lo contrario, edita la original.
-        """
         target_presentation_id, slides = self._prepare_target_presentation(
             presentation_url, folder_url_or_id, new_name
         )
@@ -789,6 +781,7 @@ class GoogleSlidesAutomation:
 
         Crea una copia, reordena las slides según la secuencia indicada y rellena cada una con su content.
         """
+   
     def build_presentation_from_spec(
         self,
         presentation_url: str,

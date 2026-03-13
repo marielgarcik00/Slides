@@ -527,7 +527,424 @@ function showUploadResult(data) {
 }
 
 // ========================================================================
-// FUNCIÓN 5: VERIFICAR ESTADO DEL SERVICIO
+// GEMINI: PROBAR SOLO LA IA
+// ========================================================================
+
+async function askGeminiOnly() {
+    const text = document.getElementById('ask-gemini-text').value.trim();
+    if (!text) {
+        showError('ask-gemini', 'Escribí o pegá un texto.');
+        return;
+    }
+    try {
+        setUIState('ask-gemini', 'loading');
+        setButtonState('btn-ask-gemini', true);
+        const data = await apiFetch('/api/ask-gemini', { text: text });
+        document.getElementById('output-ask-gemini').textContent = data.response || '(vacío)';
+        showResult('ask-gemini');
+    } catch (error) {
+        showError('ask-gemini', error.message);
+    } finally {
+        setButtonState('btn-ask-gemini', false);
+    }
+}
+
+async function askGeminiStructure() {
+    const text = document.getElementById('ask-gemini-text').value.trim();
+    if (!text) {
+        showError('ask-gemini', 'Escribí o pegá un texto antes de estructurar.');
+        return;
+    }
+    try {
+        setButtonState('btn-ask-gemini-structure', true);
+        document.getElementById('error-ask-gemini').style.display = 'none';
+        document.getElementById('result-ask-gemini-structure').style.display = 'block';
+        document.getElementById('output-ask-gemini-structure').innerHTML = '<p>Obteniendo estructura...</p>';
+        const data = await apiFetch('/api/ask-gemini-structure', { text: text });
+        const s = data.structured || {};
+        const typeLabels = { comparacion: 'Comparación', descripcion: 'Descripción', lista_items: 'Lista de ítems', portada: 'Portada', capitulo: 'Capítulo', otro: 'Otro' };
+        let html = '<p><strong>Tipo de contenido:</strong> ' + escapeHtml(typeLabels[s.content_type] || s.content_type || '—');
+        if (s.content_type_note) html += ' <span style="color:#555;">(' + escapeHtml(s.content_type_note) + ')</span>';
+        html += '</p>';
+        html += '<p><strong>Título general:</strong> ' + escapeHtml(s.main_title || '—') + '</p>';
+        html += '<p><strong>¿Tiene subtítulos/ítems?</strong> ' + (s.has_subtitles ? 'Sí' : 'No') + '</p>';
+        if (s.subtitles && s.subtitles.length > 0) {
+            html += '<p><strong>Subtítulos / ítems y descripciones:</strong></p>';
+            s.subtitles.forEach(function(item, i) {
+                html += '<p style="margin-left:12px;">' + (i + 1) + '. <strong>' + escapeHtml(item.title || '—') + '</strong>: ' + escapeHtml(item.description || '—') + '</p>';
+            });
+        }
+        html += '<pre class="output-text" style="margin-top:12px; font-size:0.85rem;">' + escapeHtml(JSON.stringify(s, null, 2)) + '</pre>';
+        document.getElementById('output-ask-gemini-structure').innerHTML = html;
+    } catch (error) {
+        document.getElementById('result-ask-gemini-structure').style.display = 'none';
+        showError('ask-gemini', error.message);
+    } finally {
+        setButtonState('btn-ask-gemini-structure', false);
+    }
+}
+
+async function askGeminiForSlide() {
+    const text = document.getElementById('ask-gemini-text').value.trim();
+    const url = (document.getElementById('ask-gemini-preso-url') && document.getElementById('ask-gemini-preso-url').value) ? document.getElementById('ask-gemini-preso-url').value.trim() : '';
+    const slideInput = document.getElementById('ask-gemini-slide-index');
+    const slideIndex = slideInput ? parseInt(slideInput.value, 10) : 0;
+    if (!text) {
+        showError('ask-gemini', 'Escribí o pegá un texto.');
+        return;
+    }
+    if (!url || !url.includes('docs.google.com/presentation') || !url.includes('/d/')) {
+        showError('ask-gemini', 'Para «Ponelo en la slide» necesitás la URL de la presentación (Google Slides).');
+        return;
+    }
+    const idx = isNaN(slideIndex) || slideIndex < 0 ? 0 : slideIndex;
+    try {
+        document.getElementById('error-ask-gemini').style.display = 'none';
+        const resultDiv = document.getElementById('result-ask-gemini-for-slide');
+        const outDiv = document.getElementById('output-ask-gemini-for-slide');
+        resultDiv.style.display = 'block';
+        setButtonState('btn-ask-gemini-for-slide', true);
+        outDiv.innerHTML = '<p>Obteniendo placeholders de la slide y generando JSON...</p>';
+        const data = await apiFetch('/api/ask-gemini-for-slide', { text: text, presentation_url: url, slide_index: idx });
+        const s = data.structured || {};
+        const lines = Object.keys(s).map(function(k) {
+            return '<p><strong>' + escapeHtml(k) + ':</strong> ' + escapeHtml(s[k] || '—') + '</p>';
+        }).join('');
+        outDiv.innerHTML = '<p style="font-size:0.9rem; color:#555;">Slide ' + idx + ', placeholders: ' + escapeHtml((data.placeholders || []).join(', ')) + (data.template_matched ? ' (plantilla de context.json aplicada)' : '') + '</p>' + lines + '<pre class="output-text" style="margin-top:12px; font-size:0.85rem;">' + escapeHtml(JSON.stringify(s, null, 2)) + '</pre>';
+    } catch (error) {
+        document.getElementById('result-ask-gemini-for-slide').style.display = 'none';
+        showError('ask-gemini', error.message);
+    } finally {
+        setButtonState('btn-ask-gemini-for-slide', false);
+    }
+}
+
+async function chooseBestSlide() {
+    const text = document.getElementById('ask-gemini-text').value.trim();
+    const urlEl = document.getElementById('ask-gemini-preso-url');
+    const url = urlEl ? urlEl.value.trim() : '';
+    if (!text) {
+        showError('ask-gemini', 'Escribí o pegá un texto.');
+        return;
+    }
+    if (!url || !url.includes('docs.google.com/presentation') || !url.includes('/d/')) {
+        showError('ask-gemini', 'Para elegir la mejor slide necesitás la URL de la presentación (Google Slides).');
+        return;
+    }
+    try {
+        document.getElementById('error-ask-gemini').style.display = 'none';
+        const resultDiv = document.getElementById('result-choose-best-slide');
+        const outDiv = document.getElementById('output-choose-best-slide');
+        resultDiv.style.display = 'block';
+        setButtonState('btn-choose-best-slide', true);
+        outDiv.innerHTML = '<p>Interpretando texto y revisando slides...</p>';
+        const data = await apiFetch('/api/choose-best-slide', { text: text, presentation_url: url });
+        const st = data.structured || {};
+        const typeLabels = { comparacion: 'Comparación', descripcion: 'Descripción', lista_items: 'Lista de ítems', portada: 'Portada', capitulo: 'Capítulo', otro: 'Otro' };
+        let html = '<p><strong>Plantilla elegida:</strong> ' + escapeHtml(data.template || '—') + '</p>';
+        html += '<p><strong>Contenido detectado:</strong> ' + escapeHtml(typeLabels[st.content_type] || st.content_type || '—');
+        if (st.has_subtitles && st.subtitles && st.subtitles.length) {
+            html += ' · ' + st.subtitles.length + ' ítem(s)';
+        }
+        html += '</p>';
+        html += '<p><strong>Mejor slide en la presentación:</strong> índice <strong>' + data.best_slide_index + '</strong>';
+        if (data.matched_template) {
+            html += ' — esta slide usa la plantilla ' + escapeHtml(data.matched_template);
+        } else {
+            html += ' — no había una slide con esa plantilla; el JSON es para la plantilla sugerida por el contenido';
+        }
+        html += '</p>';
+        if (data.json_for_template && Object.keys(data.json_for_template).length > 0) {
+            html += '<p><strong>Texto en formato JSON para esta plantilla:</strong></p>';
+            html += '<pre class="output-text" style="background:#f5f5f5; padding:12px; border-radius:6px; overflow:auto; font-size:0.85rem; margin-top:6px; white-space:pre-wrap;">' + escapeHtml(JSON.stringify(data.json_for_template, null, 2)) + '</pre>';
+        } else {
+            html += '<p style="color:#666;">No se pudo generar el JSON para la plantilla.</p>';
+        }
+        if (data.slides && data.slides.length) {
+            html += '<p style="margin-top:12px;"><strong>Slides en la presentación:</strong></p><ul style="margin-top:4px; font-size:0.9rem;">';
+            data.slides.forEach(function(s) {
+                const ids = (s.identifiers || []).join(', ') || '(sin $)';
+                html += '<li>Slide ' + s.index + ': ' + escapeHtml(ids) + '</li>';
+            });
+            html += '</ul>';
+        }
+        outDiv.innerHTML = html;
+    } catch (error) {
+        document.getElementById('result-choose-best-slide').style.display = 'none';
+        showError('ask-gemini', error.message);
+    } finally {
+        setButtonState('btn-choose-best-slide', false);
+    }
+}
+
+// GEMINI: PARSEAR TEXTO Y RELLENAR SLIDE
+// ========================================================================
+
+/**
+ * Solo parsear: pide URL de plantilla + índice de slide, llama a Gemini y muestra el prompt que se mandó y el JSON que devolvió.
+ * Guarda el resultado en window.lastParseResult para que "Crear copia con este resultado" lo reutilice.
+ */
+async function parseTextOnly() {
+    const text = document.getElementById('gemini-text').value.trim();
+    const url = document.getElementById('gemini-parse-url').value.trim().replace(/,\s*$/, '');
+    const slideInput = document.getElementById('gemini-parse-slide');
+    const slideIndex = slideInput ? parseInt(slideInput.value, 10) : 0;
+    if (!text) {
+        showError('gemini', 'Escribí algo en el cuadro de texto.');
+        return;
+    }
+    if (!url || !url.includes('docs.google.com/presentation') || !url.includes('/d/')) {
+        showError('gemini', 'Para probar el parseo necesitás la URL de la plantilla (Google Slides) y el índice de la slide.');
+        return;
+    }
+    try {
+        setUIState('gemini', 'loading');
+        setButtonState('btn-parse-text', true);
+        const payload = {
+            text: text,
+            presentation_url: url,
+            slide_index: isNaN(slideIndex) || slideIndex < 0 ? 0 : slideIndex
+        };
+        const data = await apiFetch('/api/parse-text', payload);
+        window.lastParseResult = {
+            presentation_url: url,
+            slide_index: isNaN(slideIndex) || slideIndex < 0 ? 0 : slideIndex,
+            parsed: data.parsed || {},
+            placeholders: data.placeholders || []
+        };
+        const out = document.getElementById('output-gemini');
+        const promptBlock = data.prompt_sent
+            ? `<details open><summary><strong>Prompt que se le envió a Gemini</strong></summary><pre style="background:#f0f4f8; padding:12px; border-radius:6px; overflow:auto; font-size:0.8rem; margin-top:6px; white-space:pre-wrap; max-height:280px;">${escapeHtml(data.prompt_sent)}</pre></details>`
+            : '';
+        const jsonBlock = data.parsed && Object.keys(data.parsed).length > 0
+            ? `<p style="margin-top:12px;"><strong>JSON que devolvió Gemini</strong></p><pre style="background:#f5f5f5; padding:12px; border-radius:6px; overflow:auto; font-size:0.85rem;">${escapeHtml(JSON.stringify(data.parsed, null, 2))}</pre>`
+            : '';
+        out.innerHTML = `
+            ${promptBlock}
+            ${jsonBlock}
+            <p style="margin-top:14px; font-size:0.9rem; color:#555;">Si este resultado está bien, indicá la carpeta de Drive abajo y usá <strong>«Crear copia y rellenar con este resultado»</strong> para no volver a llamar a Gemini.</p>
+            <button type="button" id="btn-fill-with-result" class="btn btn-primary" style="margin-top:8px;">Crear copia y rellenar con este resultado</button>
+        `;
+        document.getElementById('btn-fill-with-result').onclick = fillWithLastParseResult;
+        showResult('gemini');
+    } catch (error) {
+        console.error('Error:', error);
+        showError('gemini', error.message);
+    } finally {
+        setButtonState('btn-parse-text', false);
+    }
+}
+
+/**
+ * Crea una copia de la plantilla y rellena la slide usando el JSON del último "Solo parsear" (reutiliza, no llama a Gemini).
+ */
+async function fillWithLastParseResult() {
+    const last = window.lastParseResult;
+    if (!last || !last.parsed || Object.keys(last.parsed).length === 0) {
+        showError('gemini', 'Primero hacé «Solo parsear» y esperá a que devuelva el JSON.');
+        return;
+    }
+    const folderUrl = document.getElementById('gemini-folder').value.trim().replace(/,\s*$/, '');
+    const newName = document.getElementById('gemini-name').value.trim();
+    if (!folderUrl) {
+        showError('gemini', 'Indicá la carpeta de Drive donde crear la copia.');
+        return;
+    }
+    try {
+        setUIState('gemini', 'loading');
+        setButtonState('btn-fill-with-result', true);
+        const data = await apiFetch('/api/parse-and-fill', {
+            presentation_url: last.presentation_url,
+            folder_url_or_id: folderUrl,
+            new_name: newName || null,
+            slide_index: last.slide_index,
+            parsed_replacements: last.parsed
+        });
+        const out = document.getElementById('output-gemini');
+        const link = data.new_presentation_url || `https://docs.google.com/presentation/d/${data.presentation_id}/edit`;
+        out.innerHTML = `
+            <strong>Copia creada</strong> usando el JSON que habías parseado (no se llamó a Gemini de nuevo).<br>
+            Slide ${data.slide_index} rellenada. Reemplazados: ${(data.replaced || []).join(', ')}.<br>
+            <a href="${escapeHtml(link)}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación (copia)</a>
+        `;
+        showResult('gemini');
+    } catch (error) {
+        console.error('Error:', error);
+        showError('gemini', error.message);
+    } finally {
+        const btn = document.getElementById('btn-fill-with-result');
+        if (btn) setButtonState('btn-fill-with-result', false);
+    }
+}
+
+/**
+ * Crea una copia de la plantilla en la carpeta indicada, Gemini completa los # de la slide 0.
+ * La plantilla original NUNCA se modifica.
+ */
+async function parseAndFill() {
+    const text = document.getElementById('gemini-text').value.trim();
+    const presentationUrl = document.getElementById('gemini-url').value.trim().replace(/,\s*$/, '');
+    const folderUrl = document.getElementById('gemini-folder').value.trim().replace(/,\s*$/, '');
+    const newName = document.getElementById('gemini-name').value.trim();
+    const slideIndexInput = document.getElementById('gemini-slide-index');
+    const slideIndex = slideIndexInput ? parseInt(slideIndexInput.value, 10) : 0;
+    if (!text) {
+        showError('gemini', 'Escribí algo en el cuadro de texto.');
+        return;
+    }
+    if (!presentationUrl || !presentationUrl.includes('docs.google.com/presentation') || !presentationUrl.includes('/d/')) {
+        showError('gemini', 'La URL de la plantilla tiene que ser de Google Slides (ej: https://docs.google.com/presentation/d/ID/edit).');
+        return;
+    }
+    if (!folderUrl) {
+        showError('gemini', 'Indicá la carpeta de Drive donde crear la copia. La plantilla nunca se modifica.');
+        return;
+    }
+    try {
+        setUIState('gemini', 'loading');
+        setButtonState('btn-parse-fill', true);
+        const data = await apiFetch('/api/parse-and-fill', {
+            presentation_url: presentationUrl,
+            folder_url_or_id: folderUrl,
+            new_name: newName || null,
+            slide_index: isNaN(slideIndex) || slideIndex < 0 ? 0 : slideIndex,
+            text: text
+        });
+        const parsedLines = data.parsed && typeof data.parsed === 'object'
+            ? Object.entries(data.parsed).map(([k, v]) => `<strong>#${k}:</strong> ${escapeHtml(String(v).substring(0, 200))}${String(v).length > 200 ? '…' : ''}`).join('<br>')
+            : '';
+        const out = document.getElementById('output-gemini');
+        const link = data.new_presentation_url || `https://docs.google.com/presentation/d/${data.presentation_id}/edit`;
+        out.innerHTML = `
+            <strong>Gemini completó estos placeholders:</strong><br>${parsedLines || '—'}<br><br>
+            <strong>Copia creada.</strong> Slide ${data.slide_index} rellenada. Reemplazados: ${(data.replaced || []).join(', ')}. La plantilla no fue modificada.<br>
+            <a href="${escapeHtml(link)}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación (copia)</a>
+        `;
+        showResult('gemini');
+    } catch (error) {
+        console.error('Error:', error);
+        showError('gemini', error.message);
+    } finally {
+        setButtonState('btn-parse-fill', false);
+    }
+}
+
+function escapeHtml(str) {
+    if (str == null) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ========================================================================
+// FUNCIÓN 5: GENERAR DESDE SPEC
+// ========================================================================
+
+const SPEC_EXAMPLE = {
+  slide_1: {
+    type: "cover",
+    content: {
+      main_title: "Presentación de testeo",
+      footer_context: "Contexto opcional"
+    }
+  },
+  slide_2: {
+    type: "chapter",
+    content: {
+      section_title: "Introducción",
+      chapter: "Capítulo 1",
+      _number: "1"
+    }
+  },
+  slide_3: {
+    type: "descriptive",
+    content: {
+      main_title: "Resumen ejecutivo",
+      description: "Este es el texto descriptivo de la diapositiva. Podés poner todo el contenido que necesites para probar el reemplazo de los marcadores."
+    }
+  },
+  slide_4: {
+    type: "three",
+    content: {
+      item_1_title: "Primer ítem",
+      item_1_description: "Descripción del primer punto.",
+      item_2_title: "Segundo ítem",
+      item_2_description: "Descripción del segundo punto.",
+      item_3_title: "Tercer ítem",
+      item_3_description: "Descripción del tercer punto."
+    }
+  },
+  slide_5: {
+    type: "comparative",
+    content: {
+      main_title: "Comparativa",
+      column_1_title: "Opción A",
+      column_1_description: "Detalle de la opción A.",
+      column_2_title: "Opción B",
+      column_2_description: "Detalle de la opción B."
+    }
+  }
+};
+
+function loadSpecExample() {
+  document.getElementById('name-spec').value = 'Presentación Monks - Test';
+  document.getElementById('json-spec').value = JSON.stringify(SPEC_EXAMPLE, null, 2);
+}
+
+async function buildFromSpec() {
+  const presentationUrl = document.getElementById('url-spec').value.trim();
+  const folderUrl = document.getElementById('folder-spec').value.trim();
+  const newName = document.getElementById('name-spec').value.trim();
+  const jsonSpec = document.getElementById('json-spec').value.trim();
+
+  if (!presentationUrl || !presentationUrl.includes('docs.google.com/presentation')) {
+    showError('spec', 'Ingresá la URL del template (Google Slides).');
+    return;
+  }
+  if (!folderUrl) {
+    showError('spec', 'Ingresá la carpeta de destino (URL o ID de Drive).');
+    return;
+  }
+  if (!jsonSpec) {
+    showError('spec', 'Ingresá el JSON del spec (o usá "Cargar ejemplo").');
+    return;
+  }
+
+  let spec;
+  try {
+    spec = JSON.parse(jsonSpec);
+  } catch (e) {
+    showError('spec', 'JSON inválido: ' + e.message);
+    return;
+  }
+
+  try {
+    setUIState('spec', 'loading');
+    setButtonState('btn-build-spec', true);
+
+    const data = await apiFetch('/api/build-from-spec', {
+      presentation_url: presentationUrl,
+      folder_url_or_id: folderUrl,
+      new_name: newName || null,
+      spec: spec
+    });
+
+    const output = document.getElementById('output-spec');
+    output.innerHTML = `
+      <a href="${data.new_presentation_url}" target="_blank" style="font-weight:bold; color:#2e7d32;">Abrir presentación</a><br>
+      <span style="font-size:0.85em; color:#666;">Slides: ${data.slides_count} · ID: ${data.new_presentation_id}</span>
+    `;
+    showResult('spec');
+  } catch (error) {
+    console.error('Error:', error);
+    showError('spec', error.message);
+  } finally {
+    setButtonState('btn-build-spec', false);
+  }
+}
+
+// ========================================================================
+// FUNCIÓN 6: VERIFICAR ESTADO DEL SERVICIO
 // ========================================================================
 
 async function checkHealth() {
@@ -584,6 +1001,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('url-advanced')?.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') previewSlides();
+    });
+
+    document.getElementById('url-spec')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') buildFromSpec();
+    });
+    document.getElementById('folder-spec')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') buildFromSpec();
     });
 
     console.log('✓ Google Slides Automation Tool cargado');

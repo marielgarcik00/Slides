@@ -1,9 +1,10 @@
 # Archivos y carpetas a ignorar en Git
 
-# Credenciales
+# Credenciales y secretos (NUNCA subir a GitHub)
 credentials.json
 .env
 .env.local
+.env.*.local
 
 # Entorno virtual Python
 venv/
